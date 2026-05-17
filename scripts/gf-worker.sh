@@ -81,35 +81,36 @@ while true; do
     
     LOG_FILE="$LOG_DIR/gf_${ROOM_ID}_$(date +%s).log"
     
-    # Spawn GF process in background
-    nohup "$GF_BINARY" \
-        --room-id="$ROOM_ID" \
-        --team-a="$TEAM_A" \
-        --team-b="$TEAM_B" \
-        --stadium="$STADIUM" \
-        --duration="$DURATION" \
-        --livekit-url="${LIVEKIT_URL:-}" \
-        --livekit-token="$TOKEN" \
-        --stats-url="$STATS_URL" \
-        > "$LOG_FILE" 2>&1 &
-    
-    PID=$!
-    echo "[GF Worker $WORKER_ID] Spawned GF for room $ROOM_ID (PID $PID, log: $LOG_FILE)"
-    
-    # Register in Redis
-    redis-cli -u "$REDIS_URL" HSET "gf.active" "$ROOM_ID" "$PID" >/dev/null 2>&1 || true
-    redis-cli -u "$REDIS_URL" HSET "gf.worker_map" "$ROOM_ID" "$WORKER_ID" >/dev/null 2>&1 || true
-    redis-cli -u "$REDIS_URL" PUBLISH "gf.ready" "$ROOM_ID" >/dev/null 2>&1 || true
-    
-    # Watchdog: monitor GF process, detect crash
+    # Spawn GF process in background (detached via nohup inside subshell)
     (
+        nohup "$GF_BINARY" \
+            --room-id="$ROOM_ID" \
+            --team-a="$TEAM_A" \
+            --team-b="$TEAM_B" \
+            --stadium="$STADIUM" \
+            --duration="$DURATION" \
+            --livekit-url="${LIVEKIT_URL:-}" \
+            --livekit-token="$TOKEN" \
+            --stats-url="$STATS_URL" \
+            --redis-url="$REDIS_URL" \
+            > "$LOG_FILE" 2>&1 &
+        
+        PID=$!
+        echo "[GF Worker $WORKER_ID] Spawned GF for room $ROOM_ID (PID $PID, log: $LOG_FILE)"
+        
+        # Register in Redis
+        redis-cli -u "$REDIS_URL" HSET "gf.active" "$ROOM_ID" "$PID" >/dev/null 2>&1 || true
+        redis-cli -u "$REDIS_URL" HSET "gf.worker_map" "$ROOM_ID" "$WORKER_ID" >/dev/null 2>&1 || true
+        redis-cli -u "$REDIS_URL" PUBLISH "gf.ready" "$ROOM_ID" >/dev/null 2>&1 || true
+        
+        # Watchdog: monitor GF process
         sleep 5  # Give GF time to init LiveKit
         if ! kill -0 "$PID" 2>/dev/null; then
             echo "[GF Worker $WORKER_ID] GF crashed immediately for $ROOM_ID"
             redis-cli -u "$REDIS_URL" HDEL "gf.active" "$ROOM_ID" >/dev/null 2>&1 || true
             redis-cli -u "$REDIS_URL" HDEL "gf.worker_map" "$ROOM_ID" >/dev/null 2>&1 || true
             redis-cli -u "$REDIS_URL" PUBLISH "gf.crashed" "$ROOM_ID" >/dev/null 2>&1 || true
-            exit
+            exit 1
         fi
         
         # Monitor until process dies
@@ -117,7 +118,8 @@ while true; do
             sleep 5
         done
         
-        # GF exited normally or crashed
+        # Capture true exit code of the GF process
+        wait "$PID" 2>/dev/null
         EXIT_CODE=$?
         echo "[GF Worker $WORKER_ID] GF exited for $ROOM_ID (code $EXIT_CODE)"
         redis-cli -u "$REDIS_URL" HDEL "gf.active" "$ROOM_ID" >/dev/null 2>&1 || true

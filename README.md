@@ -38,7 +38,8 @@ make -j$(nproc)
   --duration=600 \
   --livekit-url=wss://your-livekit.com \
   --livekit-token=xxx \
-  --stats-url=http://stats:8000
+  --stats-url=http://stats:8000 \
+  --redis-url=redis://localhost:6379
 ```
 
 ## Architecture

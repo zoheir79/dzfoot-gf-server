@@ -5,8 +5,35 @@
 #include <chrono>
 #include <cstring>
 #include <cmath>
+#include <cctype>
 
 namespace GameServer {
+
+// Validate Redis CLI arguments to prevent shell injection
+// TODO: migrate to hiredis C client for production
+static bool isSafeRedisArg(const std::string& s) {
+    for (char c : s) {
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' && c != ':' && c != '/' && c != '.' && c != '@') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void redisPublish(const std::string& roomId, const std::string& redisUrl, const char* channel) {
+    if (!isSafeRedisArg(roomId) || !isSafeRedisArg(redisUrl)) {
+        std::cerr << "[GameServer] Unsafe Redis args, skipping publish" << std::endl;
+        return;
+    }
+    std::string cmd = "redis-cli -u " + redisUrl + " PUBLISH " + channel + " " + roomId + " > /dev/null 2>&1";
+    system(cmd.c_str());
+}
+
+static void redisHeartbeat(const std::string& roomId, const std::string& redisUrl) {
+    if (!isSafeRedisArg(roomId) || !isSafeRedisArg(redisUrl)) return;
+    std::string cmd = "redis-cli -u " + redisUrl + " HSET gf.heartbeat " + roomId + " $(date +%s) > /dev/null 2>&1";
+    system(cmd.c_str());
+}
 
 Server::Server(const Config& cfg) : cfg_(cfg) {
     currentState_.timer = 0.0f;
@@ -36,19 +63,12 @@ Server::Server(const Config& cfg) : cfg_(cfg) {
     currentState_.ball.pos[2] = 0.0f;
 }
 
-static void redisHeartbeat(const std::string& roomId, const std::string& redisUrl) {
-    // Simple system call to update heartbeat in Redis
-    std::string cmd = "redis-cli -u " + redisUrl + " HSET gf.heartbeat " + roomId + " $(date +%s) > /dev/null 2>&1";
-    system(cmd.c_str());
-}
-
 void Server::run() {
     std::cout << "[GameServer] Room " << cfg_.roomId << " starting (" << cfg_.duration << "s)" << std::endl;
 
     // Signal ready to Session Service via Redis
     if (!cfg_.redisUrl.empty()) {
-        std::string cmd = "redis-cli -u " + cfg_.redisUrl + " PUBLISH gf.ready " + cfg_.roomId + " > /dev/null 2>&1";
-        system(cmd.c_str());
+        redisPublish(cfg_.roomId, cfg_.redisUrl, "gf.ready");
     }
 
     while (running_) {
