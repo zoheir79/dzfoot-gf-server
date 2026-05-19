@@ -21,6 +21,7 @@ struct Config {
     std::string livekitUrl;
     std::string livekitToken;
     std::string statsUrl;
+    std::string redisUrl;
 };
 
 Config parseArgs(int argc, char* argv[]) {

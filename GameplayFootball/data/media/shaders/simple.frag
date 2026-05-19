@@ -1,3 +1,16 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #version 150
 
 #pragma optimize(on)
@@ -23,29 +36,29 @@ out vec4 stdout2;
 
 void main(void) {
 
-  vec4 base = texture2D(map_albedo, frag_texcoord.st);
+  vec4 base = texture(map_albedo, frag_texcoord.st);
   if (base.a < 0.12) discard;
   vec3 bump;
   if (materialbools.x == 1.0f) {
-    bump = normalize(texture2D(map_normal, frag_texcoord.st).xyz * 2.0 - 1.0);
+    bump = normalize(texture(map_normal, frag_texcoord.st).xyz * 2.0 - 1.0);
   } else {
     bump = vec3(0, 0, 1);
   }
   float spec;
   if (materialbools.y == 1.0f) {
-    spec = texture2D(map_specular, frag_texcoord.st).x * materialparams.y;
+    spec = texture(map_specular, frag_texcoord.st).x * materialparams.y;
   } else {
     spec = materialparams.y;
   }
   float illumination;
   if (materialbools.z == 1.0f) {
-    illumination = texture2D(map_illumination, frag_texcoord.st).x;
+    illumination = texture(map_illumination, frag_texcoord.st).x;
   } else {
     illumination = materialparams.z;
   }
 
 
-  // todo: make sure bump mapping is 'correct'; more info @ http://blog.selfshadow.com/publications/blending-in-detail/
+
 
   // recently disabled vec3 n = normalize(frag_normal);
   vec3 bumpNormal = bump.x * frag_tangent + bump.y * frag_bitangent + bump.z * frag_normal;//n;

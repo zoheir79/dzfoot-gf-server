@@ -18,11 +18,9 @@
 #ifndef _HPP_FOOTBALL_ONTHEPITCH_BALL
 #define _HPP_FOOTBALL_ONTHEPITCH_BALL
 
-#include "defines.hpp"
-#include "scene/scene3d/scene3d.hpp"
-#include "scene/objects/geometry.hpp"
-
-#include "scene/objects/sound.hpp"
+#include "../defines.hpp"
+#include "../scene/scene3d/scene3d.hpp"
+#include "../scene/objects/geometry.hpp"
 
 #include "../gamedefines.hpp"
 #include "../utils.hpp"
@@ -32,7 +30,7 @@ using namespace blunted;
 class Match;
 
 struct BallSpatialInfo {
-  BallSpatialInfo(const Vector3 &momentum, const Quaternion &rotation_ms) {
+  BallSpatialInfo(const Vector3 &momentum, const Quaternion &rotation_ms) { DO_VALIDATION;
     this->momentum = momentum;
     this->rotation_ms = rotation_ms;
   }
@@ -46,75 +44,52 @@ class Ball {
     Ball(Match *match);
     virtual ~Ball();
 
-    boost::intrusive_ptr<Geometry> GetBallGeom() { return ball; }
+    void Mirror();
+    boost::intrusive_ptr<Geometry> GetBallGeom() { DO_VALIDATION; return ball; }
 
     inline Vector3 Predict(int predictTime_ms) const {
-      unsigned int index = predictTime_ms;
+      int index = predictTime_ms;
       if (index >= ballPredictionSize_ms) index = ballPredictionSize_ms - 10;
       index = index / 10;
       if (index < 0) index = 0;
       return predictions[index];
     }
 
-    void GetPredictionArray(Vector3 *target);
+    void GetPredictionArray(std::vector<Vector3> &target);
     Vector3 GetMovement();
+    Vector3 GetRotation();
     void Touch(const Vector3 &target);
     void SetPosition(const Vector3 &target);
     void SetMomentum(const Vector3 &target);
-    void SetRotation(radian x, radian y, radian z, float bias = 1.0); // radians per second for each axis
-    void SetRotation(const Vector3 &rot, float bias = 1.0); // radians per second for each axis
-    BallSpatialInfo CalculatePrediction(); // returns momentum in 10ms
-    Vector3 GetPositionBuffer() { return buf_positionBuffer.GetValue(EnvironmentManager::GetInstance().GetTime_ms()); }
+    void SetRotation(real x, real y, real z, float bias = 1.0);     // radians per second for each axis
+    BallSpatialInfo CalculatePrediction();  // returns momentum in 10ms
 
-    bool BallTouchesNet() { return ballTouchesNet; }
+    bool BallTouchesNet() { DO_VALIDATION; return ballTouchesNet; }
     Vector3 GetAveragePosition(unsigned int duration_ms) const;
 
-    void TriggerBallTouchSound(float gain);
-
     void Process();
-    void PreparePutBuffers(unsigned long snapshotTime_ms);
-    void FetchPutBuffers(unsigned long putTime_ms);
     void Put();
 
     void ResetSituation(const Vector3 &focusPos);
-
-  protected:
-    boost::shared_ptr<Scene3D> scene3D;
-
+    void ProcessState(EnvState *state);
+  private:
     boost::intrusive_ptr<Node> ballNode;
     boost::intrusive_ptr<Geometry> ball;
-    boost::intrusive_ptr<Sound> sound;
-    boost::intrusive_ptr<Sound> goalpostsound;
-
     Vector3 momentum;
     Quaternion rotation_ms;
 
-    Vector3 predictions[ballPredictionSize_ms / 10];
+    Vector3 predictions[ballPredictionSize_ms / 10 + cachedPredictions + 1];
+    int valid_predictions = 0;
     Quaternion orientPrediction;
 
     std::list<Vector3> ballPosHistory;
-    Vector3 previousMomentum;
-    Vector3 previousPosition;
 
     Vector3 positionBuffer;
     Quaternion orientationBuffer;
-    TemporalSmoother<Vector3> buf_positionBuffer;
-    TemporalSmoother<Quaternion> buf_orientationBuffer;
-
-    Vector3 fetchedbuf_positionBuffer;
-    Quaternion fetchedbuf_orientationBuffer;
 
     Match *match;
 
-    float bounce;
-    float linearBounce;
-    float drag;
-    float friction;
-    float linearFriction;
-    float gravity;
-    float grassHeight;
-
-    bool ballTouchesNet;
+    bool ballTouchesNet = false;
 
 };
 

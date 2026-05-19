@@ -1,28 +1,46 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "humancontroller.hpp"
+#include <math.h>
+#include <cmath>
 
 #include "../../AIsupport/AIfunctions.hpp"
 
 #include "../../../main.hpp"
 
-HumanController::HumanController(Match *match, IHIDevice *hid) : PlayerController(match), hid(hid) {
+HumanController::HumanController(Match *match, AIControlledKeyboard *hid)
+    : PlayerController(match), hid(hid) {
+  DO_VALIDATION;
   Reset();
 }
 
-HumanController::~HumanController() {
-}
+HumanController::~HumanController() { DO_VALIDATION; }
 
 void HumanController::SetPlayer(PlayerBase *player) {
+  DO_VALIDATION;
   lastSwitchTime_ms = match->GetActualTime_ms();
 
   PlayerController::SetPlayer(player);
 }
 
 void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
-
+  DO_VALIDATION;
+  auto _mentalImage = match->GetMentalImage(_mentalImageTime);
   CastPlayer()->SetDesiredTimeToBall_ms(0);
 
   _Preprocess(); // calculate some variables
@@ -43,7 +61,9 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
       (functionType == e_FunctionType_ShortPass ||
        functionType == e_FunctionType_LongPass ||
        functionType == e_FunctionType_HighPass ||
-       functionType == e_FunctionType_Shot) && !CastPlayer()->TouchPending()) {
+       functionType == e_FunctionType_Shot) &&
+      !CastPlayer()->TouchPending()) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
@@ -51,24 +71,29 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
   if (actionMode == 1 &&
       (functionType == e_FunctionType_Sliding ||
-       functionType == e_FunctionType_Interfere) && !CastPlayer()->TouchPending()) {
+       functionType == e_FunctionType_Interfere) &&
+      !CastPlayer()->TouchPending()) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
   }
 
-
   // cancels
 
   // shot cancel
-  if (actionMode == 2 && actionButton == e_ButtonFunction_Shot && hid->GetButton(e_ButtonFunction_ShortPass) && !match->IsInSetPiece()) {
+  if (actionMode == 2 && actionButton == e_ButtonFunction_Shot &&
+      hid->GetButton(e_ButtonFunction_ShortPass) && !match->IsInSetPiece()) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
   }
 
   // high pass cancel
-  if (actionMode == 2 && actionButton == e_ButtonFunction_HighPass && hid->GetButton(e_ButtonFunction_ShortPass) && !match->IsInSetPiece()) {
+  if (actionMode == 2 && actionButton == e_ButtonFunction_HighPass &&
+      hid->GetButton(e_ButtonFunction_ShortPass) && !match->IsInSetPiece()) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
@@ -77,8 +102,10 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
   // cancel action buffer
   if (actionMode == 2 && !match->IsInSetPiece() &&
       (actionBufferTime_ms > 2000 ||
-       CastPlayer()->GetTimeNeededToGetToBall_ms() > CastPlayer()->GetTimeNeededToGetToBall_previous_ms() + 700 ||
-      (CastPlayer()->GetCurrentFunctionType() == e_FunctionType_Interfere))) {
+       CastPlayer()->GetTimeNeededToGetToBall_ms() >
+           CastPlayer()->GetTimeNeededToGetToBall_previous_ms() + 700 ||
+       (CastPlayer()->GetCurrentFunctionType() == e_FunctionType_Interfere))) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
@@ -86,19 +113,27 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
   // cancel pressure and such
   if (actionMode == 1 && actionBufferTime_ms > 1000) {
+    DO_VALIDATION;
     actionMode = 0;
     gauge_ms = 0;
     actionBufferTime_ms = 0;
   }
 
-
   // execute buffer?
 
   if (actionMode == 2) {
+    DO_VALIDATION;
 
     if (!hid->GetButton(actionButton) ||
-        (hid->GetButton(actionButton) && gauge_ms > 500) || // allow anim to kick in before queue is complete (before button is released), it will usually touch ball after the remaining time anyway, so we still have time to add more power, yet still respond as fast as possible
-        (!CastPlayer()->HasPossession() && !match->IsInSetPiece() && actionBufferTime_ms > 0)) {
+        (hid->GetButton(actionButton) &&
+         gauge_ms >
+             500) ||  // allow anim to kick in before queue is complete (before
+                      // button is released), it will usually touch ball after
+                      // the remaining time anyway, so we still have time to add
+                      // more power, yet still respond as fast as possible
+        (!CastPlayer()->HasPossession() && !match->IsInSetPiece() &&
+         actionBufferTime_ms > 0)) {
+      DO_VALIDATION;
 
       int baseTime_ms = 60; // substract a little because we can't really press a button shorter than this
       float gaugeFactor = (gauge_ms - baseTime_ms) * (1.0f / float(1000 - baseTime_ms));
@@ -107,7 +142,10 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
       // action button released!
 
       // force set piece methods
-      if (match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && team->GetController()->GetSetPieceType() == e_SetPiece_KickOff) {
+      if (match->IsInSetPiece() &&
+          team->GetController()->GetPieceTaker() == player &&
+          team->GetController()->GetSetPieceType() == e_GameMode_KickOff) {
+        DO_VALIDATION;
 
         PlayerCommand command;
 
@@ -124,15 +162,15 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
         commandQueue.push_back(command);
 
-
       } else if (actionButton == e_ButtonFunction_ShortPass) {
+        DO_VALIDATION;
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_ShortPass;
         command.useDesiredMovement = false;
         command.useDesiredLookAt = false;
 
-        float inputPower = clamp(pow(gaugeFactor, 0.7f), 0.01f, 1.0f);
+        float inputPower = clamp(std::pow(gaugeFactor, 0.7f), 0.01f, 1.0f);
         command.touchInfo.inputDirection = inputDirection;
         command.touchInfo.inputPower = inputPower;
         command.touchInfo.autoDirectionBias = GetConfiguration()->GetReal("gameplay_shortpass_autodirection", _default_ShortPass_AutoDirection);
@@ -141,15 +179,15 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
         commandQueue.push_back(command);
 
-
       } else if (actionButton == e_ButtonFunction_LongPass) {
+        DO_VALIDATION;
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_LongPass;
         command.useDesiredMovement = false;
         command.useDesiredLookAt = false;
 
-        float inputPower = clamp(pow(gaugeFactor, 0.65f), 0.01f, 1.0f);
+        float inputPower = clamp(std::pow(gaugeFactor, 0.65f), 0.01f, 1.0f);
         command.touchInfo.inputDirection = inputDirection;
         command.touchInfo.inputPower = inputPower;
         command.touchInfo.autoDirectionBias = GetConfiguration()->GetReal("gameplay_throughpass_autodirection", _default_ThroughPass_AutoDirection);
@@ -158,15 +196,15 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
         commandQueue.push_back(command);
 
-
       } else if (actionButton == e_ButtonFunction_HighPass) {
+        DO_VALIDATION;
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_HighPass;
         command.useDesiredMovement = false;
         command.useDesiredLookAt = false;
 
-        float inputPower = clamp(pow(gaugeFactor, 0.55f), 0.01f, 1.0f);
+        float inputPower = clamp(std::pow(gaugeFactor, 0.55f), 0.01f, 1.0f);
         command.touchInfo.inputDirection = inputDirection;
         command.touchInfo.inputPower = inputPower;
         command.touchInfo.autoDirectionBias = GetConfiguration()->GetReal("gameplay_highpass_autodirection", _default_HighPass_AutoDirection);
@@ -175,8 +213,8 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
         commandQueue.push_back(command);
 
-
       } else if (actionButton == e_ButtonFunction_Shot) {
+        DO_VALIDATION;
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_Shot;
@@ -185,22 +223,23 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
         command.desiredVelocityFloat = inputVelocityFloat; // this is so we can use sprint/dribble buttons as shot modifiers
         command.touchInfo.inputDirection = inputDirection;
         command.touchInfo.autoDirectionBias = GetConfiguration()->GetReal("gameplay_shot_autodirection", _default_Shot_AutoDirection);
-        if (GetHIDevice()->GetDeviceType() == e_HIDeviceType_Keyboard) command.touchInfo.autoDirectionBias = 1.0f;
+        command.touchInfo.autoDirectionBias = 1.0f;
         command.touchInfo.desiredDirection = AI_GetShotDirection(CastPlayer(), command.touchInfo.inputDirection, command.touchInfo.autoDirectionBias);
-        command.touchInfo.desiredPower = clamp(pow(gaugeFactor, 0.6f), 0.01f, 1.0f);
+        command.touchInfo.desiredPower =
+            clamp(std::pow(gaugeFactor, 0.6f), 0.01f, 1.0f);
 
         commandQueue.push_back(command);
-
       }
-
     }
 
-
   } else if (actionMode == 1) {
+    DO_VALIDATION;
 
     if (hid->GetButton(actionButton)) {
+      DO_VALIDATION;
 
       if (actionButton == e_ButtonFunction_Sliding) {
+        DO_VALIDATION;
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_Sliding;
@@ -210,32 +249,35 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
         command.useDesiredLookAt = true;
         command.desiredLookAt = CastPlayer()->GetPosition() + CastPlayer()->GetMovement() * 0.1f + command.desiredDirection * 10.0f;
         commandQueue.push_back(command);
-
       }
 
       if (actionButton == e_ButtonFunction_TeamPressure) {
+        DO_VALIDATION;
 
         team->GetController()->ApplyTeamPressure();
-
       }
 
       if (actionButton == e_ButtonFunction_KeeperRush) {
+        DO_VALIDATION;
 
         team->GetController()->ApplyKeeperRush();
-
       }
 
     } else {
-
       // action button released!
       actionMode = 0;
-
     }
   }
 
   // set piece?
-  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) || match->GetBallRetainer() == player)) ||
-      (match->IsInSetPiece() && team->GetController()->GetPieceTaker() != player && match->GetBallRetainer() == 0)) {
+  if ((match->IsInSetPiece() &&
+       team->GetController()->GetPieceTaker() == player &&
+       (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) ||
+        match->GetBallRetainer() == player)) ||
+      (match->IsInSetPiece() &&
+       team->GetController()->GetPieceTaker() != player &&
+       match->GetBallRetainer() == 0)) {
+    DO_VALIDATION;
     _SetPieceCommand(commandQueue);
     //if (team->GetController()->GetPieceTaker() == player) printf("waiting to take set piece!\n");
     //if (team->GetController()->GetPieceTaker() != player) printf("waiting for teammate to take set piece!\n");
@@ -250,6 +292,7 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
   //SetBlueDebugPilon(player->GetPosition() + inputDirection * (inputVelocityFloat * 0.5f + 0.6f));
 
   if (match->IsInPlay() && !match->IsInSetPiece()) {
+    DO_VALIDATION;
 
     bool idleTurnToOpponentGoal = false;
     bool knockOn = false;
@@ -260,11 +303,17 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
     Vector3 inputDirectionSave2 = inputDirection;
     float inputVelocitySave2 = inputVelocityFloat;
     if (actionMode == 2) {
-      float dot = CastPlayer()->GetDirectionVec().GetDotProduct(inputDirection) * 0.5f + 0.5f; // todo: test
+      DO_VALIDATION;
+      float dot = CastPlayer()->GetDirectionVec().GetDotProduct(inputDirection) * 0.5f + 0.5f;
+      if (dot < 0) {
+        DO_VALIDATION;
+        dot = 0;
+      }
       if (CastPlayer()->GetEnumVelocity() != e_Velocity_Idle) {
+        DO_VALIDATION;
         inputDirection = (CastPlayer()->GetDirectionVec() * 1.0f + inputDirection * 0.0f).GetNormalized(inputDirection); // want inputdirection to be biggest, so we won't stubbornly fail to do 180s
       }
-      dot = pow(dot, 1.5f); // prefer braking, even on slight angles
+      dot = std::pow(dot, 1.5f);  // prefer braking, even on slight angles
       dot = dot * 0.8f + 0.2f;
       dot *= 0.9f; // else, <=walk-anims may never work (backheels and such)
       inputVelocityFloat = CastPlayer()->GetFloatVelocity() * dot;
@@ -280,6 +329,7 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
     // reload original input
     if (actionMode == 2) {
+      DO_VALIDATION;
       inputDirection = inputDirectionSave2;
       inputVelocityFloat = inputVelocitySave2;
     }
@@ -294,31 +344,39 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
   bool forceMagnet = false;
   bool extraHaste = false;
   if (actionMode != 2 && hid->GetButton(e_ButtonFunction_Pressure)) {
+    DO_VALIDATION;
     forceMagnet = true;
     extraHaste = true;
   }
   if (actionMode == 2) {
+    DO_VALIDATION;
     forceMagnet = true;
     extraHaste = true;
   }
   _MovementCommand(commandQueue, forceMagnet, extraHaste);
 
   if (commandQueue.size() > 0) {
+    DO_VALIDATION;
     PlayerCommand &command = commandQueue.at(commandQueue.size() - 1);
     assert(command.desiredFunctionType == e_FunctionType_Movement); // make sure this is the movement command (is probably guaranteed, check out _MovementCommand)
 
-/*
-    // no magnet
-    command.desiredDirection = inputDirection;
-    command.desiredVelocityFloat = inputVelocityFloat;
-    if (command.desiredVelocityFloat < idleDribbleSwitch) command.desiredDirection = (_mentalImage->GetBallPrediction(500).Get2D() - player->GetPosition()).GetNormalized(inputDirection);
-    //command.desiredLookAt = CastPlayer()->GetPosition() + inputDirection * 10;
-    command.desiredLookAt = _mentalImage->GetBallPrediction(500).Get2D();
-*/
+    if (!match->GetUseMagnet()) {
+      DO_VALIDATION;
+      // no magnet
+      command.desiredDirection = inputDirection;
+      command.desiredVelocityFloat = inputVelocityFloat;
+      if (command.desiredVelocityFloat < idleDribbleSwitch) command.desiredDirection = (_mentalImage->GetBallPrediction(500).Get2D() - player->GetPosition()).GetNormalized(inputDirection);
+      //command.desiredLookAt = CastPlayer()->GetPosition() + inputDirection * 10;
+      command.desiredLookAt = _mentalImage->GetBallPrediction(500).Get2D();
+    }
 
     // super cancel
-    if (hid->GetButton(e_ButtonFunction_Dribble) && hid->GetButton(e_ButtonFunction_Sprint)) {
+    if (match->IsInPlay() && !match->IsInSetPiece() &&
+        hid->GetButton(e_ButtonFunction_Dribble) &&
+        hid->GetButton(e_ButtonFunction_Sprint)) {
+      DO_VALIDATION;
       if (!hasBestPossession) {
+        DO_VALIDATION;
         command.desiredDirection = inputDirection;
         command.desiredVelocityFloat = inputVelocityFloat;
       }
@@ -330,26 +388,34 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
 }
 
 void HumanController::Process() {
+  DO_VALIDATION;
 
   // just doesn't work so well (fixes the 'humans can't change stick pos instantly' problem, but introduces too much lag). maybe revisit/update later
   bool enableSteadyDirectionSystem = false;
 
   PlayerController::Process();
+  DO_VALIDATION;
 
   Vector3 currentDirection;
-  float dud;
+  float dud = 0.0f;
   _GetHidInput(currentDirection, dud);
   radian angle = fabs(currentDirection.GetAngle2D(previousDirection));
   previousDirection = currentDirection;
+  DO_VALIDATION;
 
   // only set steadydirection if angle is small (= human probably reaching his intended direction)
   // or very large (= maybe the stick has been in deadzone space; humans can't move this fast)
   if (enableSteadyDirectionSystem) {
-    if (angle < 0.01f * pi || angle > 0.65f * pi || (match->GetActualTime_ms() - lastSteadyDirectionSnapshotTime_ms) > 100) {
+    DO_VALIDATION;
+    if (angle < 0.01f * pi || angle > 0.65f * pi ||
+        (match->GetActualTime_ms() - lastSteadyDirectionSnapshotTime_ms) >
+            100) {
+      DO_VALIDATION;
       steadyDirection = currentDirection;
       lastSteadyDirectionSnapshotTime_ms = match->GetActualTime_ms();
     }
   } else {
+    DO_VALIDATION;
     steadyDirection = currentDirection;
     lastSteadyDirectionSnapshotTime_ms = match->GetActualTime_ms();
   }
@@ -358,17 +424,20 @@ void HumanController::Process() {
 
   // action?
 
-  if (actionMode == 0 && (!match->IsInSetPiece() || team->GetController()->GetPieceTaker() == player)) {
+  if (actionMode == 0 && (!match->IsInSetPiece() ||
+                          team->GetController()->GetPieceTaker() == player)) {
+    DO_VALIDATION;
 
-    // todo: clean this up
+
 
     // what is the context: do we want defend buttons or pass/shot buttons?
     float possessionContext = possessionAmount - 1.0f;
     if (match->GetDesignatedPossessionPlayer() == player) {
+      DO_VALIDATION;
       possessionContext = 1.0f; // new (keeper was allowed doing slidings before free kick sometimes lol, sign something was wrong)
     } else {
       // in situations where we aren't the designated player, we sometimes still want to do ball stuff, because we could try to extend our leg to pass, for example
-      if (hid->GetButton(e_ButtonFunction_ShortPass)) possessionContext += 0.15f; // todo: bug: the logic of these weighings are based on the default 'pes' button settings.. need to take into account the defensive function of the buttons as well
+      if (hid->GetButton(e_ButtonFunction_ShortPass)) possessionContext += 0.15f;
       if (hid->GetButton(e_ButtonFunction_LongPass)) possessionContext += 0.15f;
       if (hid->GetButton(e_ButtonFunction_Shot)) possessionContext += 0.15f;
 
@@ -380,76 +449,102 @@ void HumanController::Process() {
     }
 
     if (possessionContext < 0.0f) {
+      DO_VALIDATION;
       bool allowPressure = true;
       bool allowSliding = true;
       bool allowTeamPressure = true;
       bool allowKeeperRush = true;
 
       if (match->IsInSetPiece()) {
+        DO_VALIDATION;
         allowPressure = false;
         allowSliding = false;
         allowTeamPressure = false;
         allowKeeperRush = false;
       }
 
-      if (hid->GetButton(e_ButtonFunction_Pressure) && !hid->GetPreviousButtonState(e_ButtonFunction_Pressure) && allowPressure) {
+      if (hid->GetButton(e_ButtonFunction_Pressure) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_Pressure) &&
+          allowPressure) {
+        DO_VALIDATION;
         actionMode = 1;
         actionButton = e_ButtonFunction_Pressure;
       }
 
-      if (hid->GetButton(e_ButtonFunction_Sliding) && !hid->GetPreviousButtonState(e_ButtonFunction_Sliding) && allowSliding) { // we don't want high passes to turn into slidings
+      if (hid->GetButton(e_ButtonFunction_Sliding) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_Sliding) &&
+          allowSliding) {
+        DO_VALIDATION;  // we don't want high passes to turn into slidings
         actionMode = 1;
         actionButton = e_ButtonFunction_Sliding;
       }
 
-      if (hid->GetButton(e_ButtonFunction_TeamPressure) && !hid->GetPreviousButtonState(e_ButtonFunction_TeamPressure) && allowTeamPressure) {
+      if (hid->GetButton(e_ButtonFunction_TeamPressure) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_TeamPressure) &&
+          allowTeamPressure) {
+        DO_VALIDATION;
         actionMode = 1;
         actionButton = e_ButtonFunction_TeamPressure;
       }
 
-      if (hid->GetButton(e_ButtonFunction_KeeperRush) && !hid->GetPreviousButtonState(e_ButtonFunction_KeeperRush) && allowKeeperRush) {
+      if (hid->GetButton(e_ButtonFunction_KeeperRush) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_KeeperRush) &&
+          allowKeeperRush) {
+        DO_VALIDATION;
         actionMode = 1;
         actionButton = e_ButtonFunction_KeeperRush;
       }
 
     } else {
-
       bool allowShortPass = true;
       bool allowLongPass = true;
       bool allowHighPass = true;
       bool allowShot = true;
 
-      if (team->GetController()->GetPieceTaker() == player && team->GetController()->GetSetPieceType() == e_SetPiece_ThrowIn) {
+      if (team->GetController()->GetPieceTaker() == player &&
+          team->GetController()->GetSetPieceType() == e_GameMode_ThrowIn) {
+        DO_VALIDATION;
         allowHighPass = false;
         allowShot = false;
       }
 
-      if (hid->GetButton(e_ButtonFunction_ShortPass) && !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass) && allowShortPass) {
+      if (hid->GetButton(e_ButtonFunction_ShortPass) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass) &&
+          allowShortPass) {
+        DO_VALIDATION;
         actionMode = 2;
         actionButton = e_ButtonFunction_ShortPass;
       }
 
-      if (hid->GetButton(e_ButtonFunction_LongPass) && !hid->GetPreviousButtonState(e_ButtonFunction_LongPass) && allowLongPass) {
+      if (hid->GetButton(e_ButtonFunction_LongPass) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_LongPass) &&
+          allowLongPass) {
+        DO_VALIDATION;
         actionMode = 2;
         actionButton = e_ButtonFunction_LongPass;
       }
 
-      if (hid->GetButton(e_ButtonFunction_HighPass) && !hid->GetPreviousButtonState(e_ButtonFunction_HighPass) && allowHighPass) {
+      if (hid->GetButton(e_ButtonFunction_HighPass) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_HighPass) &&
+          allowHighPass) {
+        DO_VALIDATION;
         actionMode = 2;
         actionButton = e_ButtonFunction_HighPass;
       }
 
-      if (hid->GetButton(e_ButtonFunction_Shot) && !hid->GetPreviousButtonState(e_ButtonFunction_Shot) && allowShot) {
+      if (hid->GetButton(e_ButtonFunction_Shot) &&
+          !hid->GetPreviousButtonState(e_ButtonFunction_Shot) && allowShot) {
+        DO_VALIDATION;
         actionMode = 2;
         actionButton = e_ButtonFunction_Shot;
       }
-
     }
-
   }
 
   if (actionMode == 2) {
+    DO_VALIDATION;
     if (hid->GetButton(actionButton)) {
+      DO_VALIDATION;
       gauge_ms += 10;
       gauge_ms = clamp(gauge_ms, 10, 1000);
       actionBufferTime_ms = 0;
@@ -460,15 +555,16 @@ void HumanController::Process() {
   }
 
   if (hid->GetButton(e_ButtonFunction_Switch) && hasPossession) team->GetController()->ApplyAttackingRun();
-
 }
 
 Vector3 HumanController::GetDirection() {
+  DO_VALIDATION;
   Vector3 direction = CastPlayer()->GetDirectionVec();
   return hid->GetDirection().GetNormalized(direction);
 }
 
 float HumanController::GetFloatVelocity() {
+  DO_VALIDATION;
   Vector3 rawInputDirection;
   float rawInputVelocityFloat = 0;
   _GetHidInput(rawInputDirection, rawInputVelocityFloat);
@@ -476,10 +572,12 @@ float HumanController::GetFloatVelocity() {
 }
 
 int HumanController::GetReactionTime_ms() {
+  DO_VALIDATION;
   return IController::GetReactionTime_ms(); // already have human reaction time to contend with
 }
 
 void HumanController::Reset() {
+  DO_VALIDATION;
   actionMode = 0;
   gauge_ms = 0;
   actionButton = e_ButtonFunction_ShortPass;
@@ -493,15 +591,35 @@ void HumanController::Reset() {
   previousDirection = Vector3(0, -1, 0);
 
   fadingTeamPossessionAmount = 1.0;
+  hid->ResetNotSticky();
 }
 
-void HumanController::_GetHidInput(Vector3 &rawInputDirection, float &rawInputVelocityFloat) {
+void HumanController::_GetHidInput(Vector3 &rawInputDirection,
+                                   float &rawInputVelocityFloat) {
+  DO_VALIDATION;
   rawInputDirection = hid->GetDirection();
-
+  if (CastPlayer()->GetPosition().coords[0] > pitchHalfW) {
+    DO_VALIDATION;
+    rawInputDirection.coords[0] = std::min(0.0f, rawInputDirection.coords[0]);
+  }
+  if (CastPlayer()->GetPosition().coords[0] < -pitchHalfW) {
+    DO_VALIDATION;
+    rawInputDirection.coords[0] = std::max(0.0f, rawInputDirection.coords[0]);
+  }
+  if (CastPlayer()->GetPosition().coords[1] > pitchHalfH) {
+    DO_VALIDATION;
+    rawInputDirection.coords[1] = std::min(0.0f, rawInputDirection.coords[1]);
+  }
+  if (CastPlayer()->GetPosition().coords[1] < -pitchHalfH) {
+    DO_VALIDATION;
+    rawInputDirection.coords[1] = std::max(0.0f, rawInputDirection.coords[1]);
+  }
   if (rawInputDirection.GetLength() < analogStickDeadzone) {
+    DO_VALIDATION;
     rawInputDirection = CastPlayer()->GetDirectionVec();
     rawInputVelocityFloat = idleVelocity;
   } else {
+    DO_VALIDATION;
     if (hid->GetButton(e_ButtonFunction_Sprint)) rawInputVelocityFloat = sprintVelocity;
     else if (hid->GetButton(e_ButtonFunction_Dribble)) rawInputVelocityFloat = dribbleVelocity;
     else if (hid->GetButton(e_ButtonFunction_Switch) && match->GetDesignatedPossessionPlayer() == CastPlayer()) rawInputVelocityFloat = idleVelocity;
@@ -511,8 +629,9 @@ void HumanController::_GetHidInput(Vector3 &rawInputDirection, float &rawInputVe
   }
 
   if (GetLastSwitchBias() > 0.0f) {
+    DO_VALIDATION;
     float switchInfluence = 0.5f;
-    float switchBias = pow(GetLastSwitchBias(), 0.7f);
+    float switchBias = std::pow(GetLastSwitchBias(), 0.7f);
     Vector3 currentMovement = player->GetDirectionVec() * player->GetFloatVelocity();
     Vector3 manualMovement = rawInputDirection * rawInputVelocityFloat;
     Vector3 resultMovement = currentMovement * switchBias * switchInfluence +
@@ -520,5 +639,4 @@ void HumanController::_GetHidInput(Vector3 &rawInputDirection, float &rawInputVe
     rawInputDirection = resultMovement.GetNormalized(rawInputDirection);
     rawInputVelocityFloat = resultMovement.GetLength();
   }
-
 }

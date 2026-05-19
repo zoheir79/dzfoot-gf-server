@@ -18,55 +18,19 @@
 #ifndef _HPP_GUI2_GUI2TASK
 #define _HPP_GUI2_GUI2TASK
 
-#include <SDL2/SDL_ttf.h>
-
-#include "types/iusertask.hpp"
-
-#include "scene/scene2d/scene2d.hpp"
-
+#include "wrap_SDL_ttf.h"
 #include "windowmanager.hpp"
 
 namespace blunted {
 
-  class Gui2Task : public IUserTask {
+  class Gui2Task {
 
     public:
       Gui2Task(boost::shared_ptr<Scene2D> scene2D, float aspectRatio, float margin);
-      virtual ~Gui2Task();
-
-      virtual void GetPhase();
-      virtual void ProcessPhase();
-      virtual void PutPhase();
-
-      virtual void ProcessEvents();
-
-      Gui2WindowManager *GetWindowManager() { return this->windowManager; }
-
-      void SetEventJoyButtons(int activate, int escape);
-      void GetEventJoyButtons(int &activate, int &escape) { activate = joyButtonActivate; escape = joyButtonEscape; }
-
-      void EnableKeyboard() { keyboard = true; }
-      void DisableKeyboard() { keyboard = false; }
-      bool IsKeyboardActive() { return keyboard; }
-      void SetActiveJoystickID(int joyID) { activeJoystick = joyID; }
-      int GetActiveJoystickID() const { return activeJoystick; }
-
-      virtual std::string GetName() const { return "gui2"; }
-
+      ~Gui2Task();
+      Gui2WindowManager *GetWindowManager() { DO_VALIDATION; return this->windowManager; }
     protected:
-      boost::shared_ptr<Scene2D> scene2D;
-
       Gui2WindowManager *windowManager;
-
-      std::map<SDL_Keycode, TimedKeyPress> prevKeyState;
-      bool prevButtonState[_JOYSTICK_MAX][_JOYSTICK_MAXBUTTONS];
-      bool prevAxisState[_JOYSTICK_MAX][_JOYSTICK_MAXAXES];
-
-      int joyButtonActivate = 0;
-      int joyButtonEscape = 0;
-      int activeJoystick = 0;
-      bool keyboard = false;
-
   };
 
 }

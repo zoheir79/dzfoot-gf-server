@@ -23,7 +23,7 @@ add_executable(gf_server
 )
 
 target_link_libraries(gf_server
-    gameplayfootball_lib
+    game
     enet
     # livekit::livekit
     pthread

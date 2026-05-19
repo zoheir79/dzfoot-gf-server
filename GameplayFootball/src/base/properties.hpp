@@ -18,9 +18,9 @@
 #ifndef _HPP_BASE_PROPERTIES
 #define _HPP_BASE_PROPERTIES
 
-#include "defines.hpp"
+#include "../defines.hpp"
 
-#include "base/math/vector3.hpp"
+#include "../base/math/vector3.hpp"
 
 namespace blunted {
 
@@ -32,31 +32,28 @@ namespace blunted {
 
     public:
       Properties();
+      Properties(std::vector<std::pair<std::string, float>> values);
       virtual ~Properties();
 
-      bool Exists(const char *name) const;
+      bool Exists(const std::string &name) const;
 
-      void Set(const char *name, const std::string &value);
-      void SetInt(const char *name, int value);
-      void Set(const char *name, real value);
-      void SetBool(const char *name, bool value);
-      const std::string &Get(const char *name, const std::string &defaultValue = emptyString) const;
-      bool GetBool(const char *name, bool defaultValue = false) const;
-      real GetReal(const char *name, real defaultValue = 0) const;
-      int GetInt(const char *name, int defaultValue = 0) const;
-      Vector3 GetVector3(const char *name, Vector3 defaultValue = Vector3(0, 0, 0)) const;
+      void Set(const std::string &name, const std::string &value);
+      void SetInt(const std::string &name, int value);
+      void Set(const std::string &name, real value);
+      void SetBool(const std::string &name, bool value);
+      const std::string &Get(
+          const std::string &name,
+          const std::string &defaultValue = "") const;
+      bool GetBool(const std::string &name, bool defaultValue = false) const;
+      real GetReal(const std::string &name, real defaultValue = 0) const;
+      int GetInt(const std::string &name, int defaultValue = 0) const;
       void AddProperties(const Properties *userprops);
       void AddProperties(const Properties &userprops);
       const map_Properties *GetProperties() const;
+      void ProcessState(EnvState* state);
 
-      void LoadFile(const std::string &filename);
-      void SaveFile(const std::string &filename) const;
-      void Print() const;
-
-    protected:
+     protected:
       map_Properties properties;
-
-      static std::string emptyString;
   };
 
 }

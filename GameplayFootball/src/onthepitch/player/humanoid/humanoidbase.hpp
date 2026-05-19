@@ -1,3 +1,16 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -5,8 +18,8 @@
 #ifndef _HPP_HUMANOIDBASE
 #define _HPP_HUMANOIDBASE
 
-#include "base/math/vector3.hpp"
-#include "scene/scene3d/node.hpp"
+#include "../../../base/math/vector3.hpp"
+#include "../../../scene/scene3d/node.hpp"
 
 #include "../../../gamedefines.hpp"
 #include "../../../utils.hpp"
@@ -20,9 +33,7 @@ using namespace blunted;
 class PlayerBase;
 class Match;
 
-typedef std::map < const std::string, boost::intrusive_ptr<Node> > NodeMap;
-
-struct Joint {
+struct HJoint {
   boost::intrusive_ptr<Node> node;
   Vector3 position;
   Quaternion orientation;
@@ -30,18 +41,18 @@ struct Joint {
 };
 
 struct WeightedBone {
-  int jointID;
-  float weight;
+  int jointID = 0;
+  float weight = 0.0f;
 };
 
 struct WeightedVertex {
-  int vertexID;
+  int vertexID = 0;
   std::vector<WeightedBone> bones;
 };
 
 struct FloatArray {
   float *data;
-  int size;
+  int size = 0;
 };
 
 enum e_InterruptAnim {
@@ -56,40 +67,28 @@ enum e_InterruptAnim {
 };
 
 struct RotationSmuggle {
-  RotationSmuggle() {
+  RotationSmuggle() { DO_VALIDATION;
     begin = 0;
     end = 0;
   }
-  void operator = (const float &value) {
+  void operator = (const float &value) { DO_VALIDATION;
     begin = value;
     end = value;
   }
   radian begin;
   radian end;
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(begin);
+    state->process(end);
+  }
 };
 
 struct Anim {
-
-  Anim() {
-    id = 0;
-    frameNum = 0;
-
-    rotationSmuggle.begin = 0;
-    rotationSmuggle.end = 0;
-    rotationSmuggleOffset = 0;
-    touchFrame = -1;
-    radiusOffset = 0.0;
-  }
-
-  Animation *anim;
-  signed int id;
-  int frameNum;
-
-  e_FunctionType functionType;
-
-  e_InterruptAnim originatingInterrupt;
-
-  Vector3 fullActionSmuggle; // without cheatdiscarddistance
+  Animation *anim = 0;
+  signed int id = 0;
+  int frameNum = 0;
+  e_FunctionType functionType = e_FunctionType_None;
+  e_InterruptAnim originatingInterrupt = e_InterruptAnim_None;
   Vector3 actionSmuggle;
   Vector3 actionSmuggleOffset;
   Vector3 actionSmuggleSustain;
@@ -97,52 +96,49 @@ struct Anim {
   Vector3 movementSmuggle;
   Vector3 movementSmuggleOffset;
   RotationSmuggle rotationSmuggle;
-  radian rotationSmuggleOffset;
-  signed int touchFrame;
-  float radiusOffset;
+  radian rotationSmuggleOffset = 0;
+  signed int touchFrame = -1;
   Vector3 touchPos;
-
   Vector3 incomingMovement;
   Vector3 outgoingMovement;
-
   Vector3 positionOffset;
-
   PlayerCommand originatingCommand;
-
   std::vector<Vector3> positions;
-};
-
-struct IdealAnimDescription {
-  IdealAnimDescription() {
-    foot = e_Foot_Left;
-    incomingVelocityFloat = 0.0f;
-    outgoingMovementRel = Vector3(0, 0, 0);;
-    incomingBodyDirectionRel = Vector3(0, -1, 0);
-    desiredLookAtAbs = Vector3(0, 0, 0);
-    baseAnim = false;
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(anim);
+    state->process(id);
+    state->process(frameNum);
+    state->process(functionType);
+    state->process(originatingInterrupt);
+    state->process(actionSmuggle);
+    state->process(actionSmuggleOffset);
+    state->process(actionSmuggleSustain);
+    state->process(actionSmuggleSustainOffset);
+    state->process(movementSmuggle);
+    state->process(movementSmuggleOffset);
+    rotationSmuggle.ProcessState(state);
+    state->process(rotationSmuggleOffset);
+    state->process(touchFrame);
+    state->process(touchPos);
+    state->process(incomingMovement);
+    state->process(outgoingMovement);
+    state->process(positionOffset);
+    originatingCommand.ProcessState(state);
+    state->process(positions);
   }
-
-  e_Foot foot;
-  float incomingVelocityFloat;
-  Vector3 outgoingMovementRel;
-  Vector3 incomingBodyDirectionRel;
-  Vector3 desiredLookAtAbs;
-  bool baseAnim;
 };
 
 struct AnimApplyBuffer {
-  AnimApplyBuffer() {
+  AnimApplyBuffer() { DO_VALIDATION;
     frameNum = 0;
-    snapshotTime_ms = 0;
     smooth = true;
     smoothFactor = 0.5f;
     noPos = false;
     orientation = 0;
   }
-  AnimApplyBuffer(const AnimApplyBuffer &src) {
+  AnimApplyBuffer(const AnimApplyBuffer &src) { DO_VALIDATION;
     anim = src.anim;
     frameNum = src.frameNum;
-    snapshotTime_ms = src.snapshotTime_ms;
     smooth = src.smooth;
     smoothFactor = src.smoothFactor;
     noPos = src.noPos;
@@ -150,23 +146,24 @@ struct AnimApplyBuffer {
     orientation = src.orientation;
     offsets = src.offsets;
   }
-  Animation *anim;
-  int frameNum;
-  unsigned long snapshotTime_ms;
-  bool smooth;
-  float smoothFactor;
-  bool noPos;
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(anim);
+    state->process(frameNum);
+    state->process(smooth);
+    state->process(smoothFactor);
+    state->process(noPos);
+    state->process(position);
+    state->process(orientation);
+    offsets.ProcessState(state);
+  }
+  Animation *anim = 0;
+  int frameNum = 0;
+  bool smooth = false;
+  float smoothFactor = 0.0f;
+  bool noPos = false;
   Vector3 position;
   radian orientation;
-  std::map < std::string, BiasedOffset > offsets;
-};
-
-struct TemporalHumanoidNode {
-  boost::intrusive_ptr<Node> actualNode;
-  Vector3 cachedPosition;
-  Quaternion cachedOrientation;
-  TemporalSmoother<Vector3> position;
-  TemporalSmoother<Quaternion> orientation;
+  BiasedOffsets offsets;
 };
 
 struct SpatialState {
@@ -174,7 +171,7 @@ struct SpatialState {
   radian angle;
   Vector3 directionVec; // for efficiency, vector version of angle
   e_Velocity enumVelocity;
-  float floatVelocity; // for efficiency, float version
+  float floatVelocity = 0.0f; // for efficiency, float version
 
   Vector3 actualMovement;
   Vector3 physicsMovement; // ignores effects like positionoffset
@@ -191,65 +188,97 @@ struct SpatialState {
   Vector3 relBodyDirectionVec; // for efficiency, vector version of relBodyAngle
   Vector3 relBodyDirectionVecNonquantized;
   e_Foot foot;
-};
 
-static const Vector3 emptyVec(0);
+  void Mirror() { DO_VALIDATION;
+    position.Mirror();
+    actualMovement.Mirror();
+    physicsMovement.Mirror();
+    animMovement.Mirror();
+    movement.Mirror();
+    actionSmuggleMovement.Mirror();
+    movementSmuggleMovement.Mirror();
+    positionOffsetMovement.Mirror();
+  }
+
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(position);
+    state->process(angle);
+    state->process(directionVec);
+    state->process(enumVelocity);
+    state->process(floatVelocity);
+    state->process(actualMovement);
+    state->process(physicsMovement);
+    state->process(animMovement);
+    state->process(movement);
+    state->process(actionSmuggleMovement);
+    state->process(movementSmuggleMovement);
+    state->process(positionOffsetMovement);
+    state->process(bodyAngle);
+    state->process(bodyDirectionVec);
+    state->process(relBodyAngleNonquantized);
+    state->process(relBodyAngle);
+    state->process(relBodyDirectionVec);
+    state->process(relBodyDirectionVecNonquantized);
+    state->process(foot);
+  }
+};
 
 class HumanoidBase {
 
   public:
-    HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::shared_ptr<AnimCollection> animCollection, boost::intrusive_ptr<Node> fullbodyTargetNode, boost::intrusive_ptr < Resource<Surface> > kit, int bodyUpdatePhaseOffset);
+    HumanoidBase(PlayerBase *player, Match *match, boost::intrusive_ptr<Node> humanoidSourceNode, boost::intrusive_ptr<Node> fullbodySourceNode, std::map<Vector3, Vector3> &colorCoords, boost::shared_ptr<AnimCollection> animCollection, boost::intrusive_ptr<Node> fullbodyTargetNode, boost::intrusive_ptr < Resource<Surface> > kit);
     virtual ~HumanoidBase();
+    void Mirror();
 
     void PrepareFullbodyModel(std::map<Vector3, Vector3> &colorCoords);
-    void UpdateFullbodyNodes();
-    bool NeedsModelUpdate();
+    void UpdateFullbodyNodes(bool mirror);
     void UpdateFullbodyModel(bool updateSrc = false);
 
     virtual void Process();
-    void PreparePutBuffers(unsigned long snapshotTime_ms);
-    void FetchPutBuffers(unsigned long putTime_ms);
-    void Put();
+    void PreparePutBuffers();
+    void FetchPutBuffers();
+    void Put(bool mirror);
 
     virtual void CalculateGeomOffsets();
-    void SetOffset(const std::string &nodeName, float bias, const Quaternion &orientation, bool isRelative = false);
+    void SetOffset(BodyPart body_part, float bias, const Quaternion &orientation, bool isRelative = false);
 
-    inline int GetFrameNum() { return currentAnim->frameNum; }
-    inline int GetFrameCount() { return currentAnim->anim->GetFrameCount(); }
+    inline int GetFrameNum() { DO_VALIDATION; return currentAnim.frameNum; }
+    inline int GetFrameCount() { DO_VALIDATION; return currentAnim.anim->GetFrameCount(); }
 
     inline Vector3 GetPosition() const { return spatialState.position; }
     inline Vector3 GetDirectionVec() const { return spatialState.directionVec; }
-    inline Vector3 GetBodyDirectionVec() const { return spatialState.bodyDirectionVec; }
-    inline radian GetAngle() const { return spatialState.angle; }
+    inline Vector3 GetBodyDirectionVec() const {
+      return spatialState.bodyDirectionVec;
+    }
     inline radian GetRelBodyAngle() const { return spatialState.relBodyAngle; }
     inline e_Velocity GetEnumVelocity() const { return spatialState.enumVelocity; }
-    inline e_FunctionType GetCurrentFunctionType() const { return currentAnim->functionType; }
-    inline e_FunctionType GetPreviousFunctionType() const { return previousAnim->functionType; }
+    inline e_FunctionType GetCurrentFunctionType() const { return currentAnim.functionType; }
+    inline e_FunctionType GetPreviousFunctionType() const { return previousAnim_functionType; }
     inline Vector3 GetMovement() const { return spatialState.movement; }
 
-    Vector3 GetGeomPosition() { return humanoidNode->GetPosition(); }
+    Vector3 GetGeomPosition() { DO_VALIDATION; return humanoidNode->GetPosition(); }
 
     int GetIdleMovementAnimID();
     void ResetPosition(const Vector3 &newPos, const Vector3 &focusPos);
     void OffsetPosition(const Vector3 &offset);
     void TripMe(const Vector3 &tripVector, int tripType);
 
-    boost::intrusive_ptr<Node> GetHumanoidNode() { return humanoidNode; }
-    boost::intrusive_ptr<Node> GetFullbodyNode() { return fullbodyNode; }
+    boost::intrusive_ptr<Node> GetHumanoidNode() { DO_VALIDATION; return humanoidNode; }
+    boost::intrusive_ptr<Node> GetFullbodyNode() { DO_VALIDATION; return fullbodyNode; }
 
     virtual float GetDecayingPositionOffsetLength() const { return decayingPositionOffset.GetLength(); }
     virtual float GetDecayingDifficultyFactor() const { return decayingDifficultyFactor; }
 
-    const Anim *GetCurrentAnim() { return currentAnim; }
-    const Anim *GetPreviousAnim() { return previousAnim; }
+    const Anim *GetCurrentAnim() { DO_VALIDATION; return &currentAnim; }
 
-    const NodeMap &GetNodeMap() { return nodeMap; }
+    const NodeMap &GetNodeMap() { DO_VALIDATION; return nodeMap; }
 
-    void Hide() { fullbodyNode->SetPosition(Vector3(1000, 1000, -1000)); hairStyle->SetPosition(Vector3(1000, 1000, -1000)); } // hax ;)
+    void Hide() { DO_VALIDATION; fullbodyNode->SetPosition(Vector3(1000, 1000, -1000)); hairStyle->SetPosition(Vector3(1000, 1000, -1000)); } // hax ;)
 
     void SetKit(boost::intrusive_ptr < Resource<Surface> > newKit);
 
     virtual void ResetSituation(const Vector3 &focusPos);
+    void ProcessState(EnvState* state);
 
   protected:
     bool _HighOrBouncyBall() const;
@@ -267,79 +296,78 @@ class HumanoidBase {
     PlayerCommand GetBasicMovementCommand(const Vector3 &desiredDirection, float velocityFloat);
 
     void SetFootSimilarityPredicate(e_Foot desiredFoot) const;
-    bool CompareFootSimilarity(int animIndex1, int animIndex2) const;
+    bool CompareFootSimilarity(e_Foot foot, int animIndex1, int animIndex2) const;
     void SetIncomingVelocitySimilarityPredicate(e_Velocity velocity) const;
     bool CompareIncomingVelocitySimilarity(int animIndex1, int animIndex2) const;
     void SetMovementSimilarityPredicate(const Vector3 &relDesiredDirection, e_Velocity desiredVelocity) const;
     float GetMovementSimilarity(int animIndex, const Vector3 &relDesiredDirection, e_Velocity desiredVelocity, float corneringBias) const;
     bool CompareMovementSimilarity(int animIndex1, int animIndex2) const;
-    bool CompareDirectionSimilarity(int animIndex1, int animIndex2) const;
-    bool CompareOutgoingVelocitySimilarity(int animIndex1, int animIndex2) const;
-    void SetIncomingBodyDirectionSimilarityPredicate(const Vector3 &relIncomingBodyDirection) const;
+    bool CompareByOrderFloat(int animIndex1, int animIndex2) const;
+    void SetIncomingBodyDirectionSimilarityPredicate(
+        const Vector3 &relIncomingBodyDirection) const;
     bool CompareIncomingBodyDirectionSimilarity(int animIndex1, int animIndex2) const;
     void SetBodyDirectionSimilarityPredicate(const Vector3 &lookAt) const;
+    real DirectionSimilarityRating(int animIndex) const;
     bool CompareBodyDirectionSimilarity(int animIndex1, int animIndex2) const;
     void SetTripDirectionSimilarityPredicate(const Vector3 &relDesiredTripDirection) const;
     bool CompareTripDirectionSimilarity(int animIndex1, int animIndex2) const;
-    void SetBallDirectionSimilarityPredicate(const Vector3 &relDesiredBallDirection) const;
-    bool CompareBallDirectionSimilarity(int animIndex1, int animIndex2) const;
     bool CompareBaseanimSimilarity(int animIndex1, int animIndex2) const;
     bool CompareCatchOrDeflect(int animIndex1, int animIndex2) const;
-    void SetNumericVariableSimilarityPredicate(const std::string &varName, float desiredValue) const;
-    bool CompareNumericVariable(int animIndex1, int animIndex2) const;
+    void SetIdlePredicate(float desiredValue) const;
+    bool CompareIdleVariable(int animIndex1, int animIndex2) const;
+    bool ComparePriorityVariable(int animIndex1, int animIndex2) const;
 
-    Vector3 CalculatePhysicsVector(Animation *anim, bool useDesiredMovement, const Vector3 &desiredMovement, bool useDesiredBodyDirection, const Vector3 &desiredBodyDirectionRel, std::vector<Vector3> &positions_ret, radian &rotationOffset_ret) const;
-    Vector3 CalculatePhysicsVector_disabled(Animation *anim, const Vector3 &desiredMovement, std::vector<Vector3> &positions_ret) const;
+    Vector3 CalculatePhysicsVector(Animation *anim, bool useDesiredMovement,
+                                   const Vector3 &desiredMovement,
+                                   bool useDesiredBodyDirection,
+                                   const Vector3 &desiredBodyDirectionRel,
+                                   std::vector<Vector3> &positions_ret,
+                                   radian &rotationOffset_ret) const;
 
     Vector3 ForceIntoAllowedBodyDirectionVec(const Vector3 &src) const;
     radian ForceIntoAllowedBodyDirectionAngle(radian angle) const; // for making small differences irrelevant while sorting
     Vector3 ForceIntoPreferredDirectionVec(const Vector3 &src) const;
     radian ForceIntoPreferredDirectionAngle(radian angle) const;
 
+    // Seems to be used for rendering only, updated in
+    // UpdateFullbodyModel / UpdateFullBodyNodes, Hide() method changes
+    // position, so maybe Hide needs to change, otherwise collision detection
+    // analysis hidden players?
     boost::intrusive_ptr<Node> fullbodyNode;
+    // Modified in PrepareFullBodyModel, not changed later.
     std::vector<FloatArray> uniqueFullbodyMesh;
-    std::vector < std::vector<WeightedVertex> > weightedVerticesVec; // < subgeoms < vertices > >
-    unsigned int fullbodySubgeomCount;
+    // Modified in PrepareFullBodyModel, not changed later.
+    std::vector < std::vector<WeightedVertex> > weightedVerticesVec;
+    // Modified in PrepareFullBodyModel, not changed later.
+    unsigned int fullbodySubgeomCount = 0;
+    // Used only for memory releasing.
     std::vector<int*> uniqueIndicesVec;
-    std::vector<Joint> joints;
-    Vector3 fullbodyOffset;
+    // Updated in UpdateFullbodyModel / UpdateFullBodyNodes,
+    // snapshot not needed. References nodes point to humanoidNode.
+    std::vector<HJoint> joints;
+    // Used only for memory management.
     boost::intrusive_ptr<Node> fullbodyTargetNode;
-
+    // Used for ball collision detection. Seems to be the one to snapshot.
     boost::intrusive_ptr<Node> humanoidNode;
-    boost::shared_ptr<Scene3D> scene3D;
-
+    // Updated in UpdateFullbodyNodes, no need to snapshot.
     boost::intrusive_ptr<Geometry> hairStyle;
-
-    std::string kitDiffuseTextureIdentString;
+    // Initiated in the constructor, no need to snapshot.
+    std::string kitDiffuseTextureIdentString = "kit_template.png";
 
     Match *match;
     PlayerBase *player;
-
+    // Shared between all players, no need to snapshot.
     boost::shared_ptr<AnimCollection> anims;
+    // Pointers from elements in humanoidNode to Nodes.
     NodeMap nodeMap;
-
+    // Seems to contain current animation context.
     AnimApplyBuffer animApplyBuffer;
 
-    AnimApplyBuffer buf_animApplyBuffer;
+    BiasedOffsets offsets;
 
-    std::vector<TemporalHumanoidNode> buf_TemporalHumanoidNodes;
-
-    bool buf_LowDetailMode;
-    int buf_bodyUpdatePhase;
-    int buf_bodyUpdatePhaseOffset;
-
-    AnimApplyBuffer fetchedbuf_animApplyBuffer;
-
-    unsigned long fetchedbuf_previousSnapshotTime_ms;
-
-    bool fetchedbuf_LowDetailMode;
-    int fetchedbuf_bodyUpdatePhase;
-    int fetchedbuf_bodyUpdatePhaseOffset;
-
-    std::map < std::string, BiasedOffset > offsets;
-
-    Anim *currentAnim;
-    Anim *previousAnim;
+    Anim currentAnim;
+    int previousAnim_frameNum;
+    e_FunctionType previousAnim_functionType = e_FunctionType_None;
 
     // position/rotation offsets at the start of currentAnim
     Vector3 startPos;
@@ -355,41 +383,32 @@ class HumanoidBase {
     Vector3 previousPosition2D;
 
     e_InterruptAnim interruptAnim;
-    int reQueueDelayFrames;
-    int tripType;
+    int reQueueDelayFrames = 0;
+    int tripType = 0;
     Vector3 tripDirection;
 
     Vector3 decayingPositionOffset;
-    float decayingDifficultyFactor;
+    float decayingDifficultyFactor = 0.0f;
 
     // for comparing dataset entries (needed by std::list::sort)
     mutable e_Foot predicate_DesiredFoot;
     mutable e_Velocity predicate_IncomingVelocity;
     mutable Vector3 predicate_RelDesiredDirection;
     mutable Vector3 predicate_DesiredDirection;
-    mutable float predicate_CorneringBias;
+    mutable float predicate_CorneringBias = 0.0f;
     mutable e_Velocity predicate_DesiredVelocity;
     mutable Vector3 predicate_RelIncomingBodyDirection;
     mutable Vector3 predicate_LookAt;
     mutable Vector3 predicate_RelDesiredTripDirection;
     mutable Vector3 predicate_RelDesiredBallDirection;
-    mutable std::string predicate_NumericVariableName;
-    mutable float predicate_NumericVariableValue;
+    mutable float predicate_idle = 0.0f;
 
-    const MentalImage *currentMentalImage;
+    // Should be dynamically retrieved from match, don't cache.
+    int mentalImageTime = 0;
 
-    float _cache_AgilityFactor;
-    float _cache_AccelerationFactor;
-
-    float zMultiplier;
-
-    std::vector<Vector3> allowedBodyDirVecs;
-    std::vector<radian> allowedBodyDirAngles;
-    std::vector<Vector3> preferredDirectionVecs;
-    std::vector<radian> preferredDirectionAngles;
-
+    const float zMultiplier;
     MovementHistory movementHistory;
-
+    bool mirrored = false;
 };
 
 #endif

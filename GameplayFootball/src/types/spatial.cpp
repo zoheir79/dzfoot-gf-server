@@ -1,113 +1,121 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // written by bastiaan konings schuiling 2008 - 2014
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "spatial.hpp"
 
+#include "../scene/scene3d/node.hpp"
+
 namespace blunted {
 
-  Spatial::Spatial(const std::string &name) : name(name), parent(0), localMode(e_LocalMode_Relative) {
-    scale.Set(1, 1, 1);
-    Vector axis(0, 0, -1);
-    rotation.SetAngleAxis(0, axis);
-    position.Set(0, 0, 0);
-    aabb.data.aabb.Reset();
-    aabb.data.dirty = false;
-    InvalidateSpatialData();
-  }
+Spatial::Spatial(const std::string &name)
+    : name(name), parent(0), localMode(e_LocalMode_Relative) {
+  DO_VALIDATION;
+  scale.Set(1, 1, 1);
+  Vector axis(0, 0, -1);
+  rotation.SetAngleAxis(0, axis);
+  position.Set(0, 0, 0);
+  aabb.aabb.Reset();
+  aabb.dirty = false;
+  InvalidateSpatialData();
+}
 
-  Spatial::~Spatial() {
-    parent = 0;
-  }
+Spatial::~Spatial() {
+  DO_VALIDATION;
+  parent = 0;
+}
 
-  Spatial::Spatial(const Spatial &src) {
-    name = src.GetName();
-    position = src.position;
-    rotation = src.rotation;
-    scale = src.scale;
-    localMode = src.localMode;
-    aabb.data.aabb = src.GetAABB();
-    aabb.data.dirty = false;
-    parent = 0;
-    InvalidateSpatialData();
-  }
+Spatial::Spatial(const Spatial &src) {
+  DO_VALIDATION;
+  name = src.GetName();
+  position = src.position;
+  rotation = src.rotation;
+  scale = src.scale;
+  localMode = src.localMode;
+  aabb.aabb = src.GetAABB();
+  aabb.dirty = false;
+  parent = 0;
+  InvalidateSpatialData();
+}
 
-  void Spatial::SetLocalMode(e_LocalMode localMode) {
-    this->localMode = localMode;
-    InvalidateBoundingVolume();
-  }
+void Spatial::SetLocalMode(e_LocalMode localMode) {
+  DO_VALIDATION;
+  this->localMode = localMode;
+  InvalidateBoundingVolume();
+}
 
-  bool Spatial::GetLocalMode() {
-    return localMode;
-  }
+e_LocalMode Spatial::GetLocalMode() {
+  DO_VALIDATION;
+  return localMode;
+}
 
-  void Spatial::SetName(const std::string &name) {
-    spatialMutex.lock();
-    this->name = name;
-    spatialMutex.unlock();
-  }
+void Spatial::SetName(const std::string &name) {
+  DO_VALIDATION;
+  this->name = name;
+}
 
   const std::string Spatial::GetName() const {
-    boost::mutex::scoped_lock blah(spatialMutex);
     return name.c_str();
   }
 
-  void Spatial::SetParent(Spatial *parent) {
+  void Spatial::SetParent(Node *parent) {
+    DO_VALIDATION;
     this->parent = parent;
     InvalidateBoundingVolume();
   }
 
-  Spatial *Spatial::GetParent() const {
-    return parent;
-  }
-
-  void Spatial::SetPosition(const Vector3 &newPosition, bool updateSpatialData) {
-    spatialMutex.lock();
+  void Spatial::SetPosition(const Vector3 &newPosition,
+                            bool updateSpatialData) {
+    DO_VALIDATION;
     position = newPosition;
-    spatialMutex.unlock();
     if (updateSpatialData) RecursiveUpdateSpatialData(e_SpatialDataType_Position);
   }
 
   Vector3 Spatial::GetPosition() const {
-    spatialMutex.lock();
-    Vector3 pos = position;
-    spatialMutex.unlock();
-    return pos;
+    return position;
   }
 
-  void Spatial::SetRotation(const Quaternion &newRotation, bool updateSpatialData) {
-    spatialMutex.lock();
+  void Spatial::SetRotation(const Quaternion &newRotation,
+                            bool updateSpatialData) {
     rotation = newRotation;
-    spatialMutex.unlock();
     if (updateSpatialData) RecursiveUpdateSpatialData(e_SpatialDataType_Both);
   }
 
   Quaternion Spatial::GetRotation() const {
-    spatialMutex.lock();
-    Quaternion rot = rotation;
-    spatialMutex.unlock();
-    return rot;
+    return rotation;
   }
 
   void Spatial::SetScale(const Vector3 &newScale) {
-    spatialMutex.lock();
+    DO_VALIDATION;
     this->scale = newScale;
-    spatialMutex.unlock();
     RecursiveUpdateSpatialData(e_SpatialDataType_Rotation);
   }
 
   Vector3 Spatial::GetScale() const {
-    spatialMutex.lock();
     Vector3 retScale = scale;
-    spatialMutex.unlock();
     return retScale;
   }
 
   Vector3 Spatial::GetDerivedPosition() const {
-    boost::mutex::scoped_lock cachelock(cacheMutex);
     if (_dirty_DerivedPosition) {
+      DO_VALIDATION;
       if (localMode == e_LocalMode_Relative) {
+        DO_VALIDATION;
         if (parent) {
+          DO_VALIDATION;
           const Quaternion parentDerivedRotation = parent->GetDerivedRotation();
           const Vector3 parentDerivedScale = parent->GetDerivedScale();
           const Vector3 parentDerivedPosition = parent->GetDerivedPosition();
@@ -126,10 +134,12 @@ namespace blunted {
   }
 
   Quaternion Spatial::GetDerivedRotation() const {
-    boost::mutex::scoped_lock cachelock(cacheMutex);
     if (_dirty_DerivedRotation) {
+      DO_VALIDATION;
       if (localMode == e_LocalMode_Relative) {
+        DO_VALIDATION;
         if (parent) {
+          DO_VALIDATION;
           _cache_DerivedRotation = (parent->GetDerivedRotation() * GetRotation()).GetNormalized();
         } else {
           _cache_DerivedRotation = GetRotation();
@@ -143,10 +153,12 @@ namespace blunted {
   }
 
   Vector3 Spatial::GetDerivedScale() const {
-    boost::mutex::scoped_lock cachelock(cacheMutex);
     if (_dirty_DerivedScale) {
+      DO_VALIDATION;
       if (localMode == e_LocalMode_Relative) {
+        DO_VALIDATION;
         if (parent) {
+          DO_VALIDATION;
           _cache_DerivedScale = parent->GetDerivedScale() * GetScale();
         } else {
           _cache_DerivedScale = GetScale();
@@ -161,31 +173,24 @@ namespace blunted {
 
   void Spatial::InvalidateBoundingVolume() {
     bool changed = false;
-    aabb.Lock();
-    if (aabb.data.dirty == false) {
-      aabb.data.dirty = true;
-      aabb.data.aabb.Reset();
+    if (aabb.dirty == false) {
+      aabb.dirty = true;
+      aabb.aabb.Reset();
       changed = true;
     }
-    aabb.Unlock();
-
     if (changed) if (parent) parent->InvalidateBoundingVolume();
   }
 
   void Spatial::InvalidateSpatialData() {
-    cacheMutex.lock();
+    DO_VALIDATION;
     _dirty_DerivedPosition = true;
     _dirty_DerivedRotation = true;
     _dirty_DerivedScale = true;
-    cacheMutex.unlock();
   }
-
 
   AABB Spatial::GetAABB() const {
     AABB tmp;
-    aabb.Lock();
-    tmp = aabb.data.aabb;
-    aabb.Unlock();
+    tmp = aabb.aabb;
     return tmp;
   }
 

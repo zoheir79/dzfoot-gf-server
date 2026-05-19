@@ -1,3 +1,16 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -9,11 +22,9 @@
 
 #include "base/math/vector3.hpp"
 
-#include <SDL2/SDL.h> // for key ids
+#include "wrap_SDL.h" // for key ids
 
 using namespace blunted;
-
-extern unsigned long time_ms;
 
 const float idleVelocity = 0.0f;
 const float dribbleVelocity = 3.5f;
@@ -35,9 +46,6 @@ const float _default_CameraHeight = 0.3f;
 const float _default_CameraFOV = 0.4f;
 const float _default_CameraAngleFactor = 0.0f;
 
-const float _default_Difficulty = 0.6f;
-const float _default_MatchDuration = 0.4f;
-
 const float _default_QuantizedDirectionBias = 0.0f;
 
 const float _default_AgilityFactor = 0.5f;
@@ -54,7 +62,8 @@ const float _default_Shot_AutoDirection = 0.2f;
 const float distanceToVelocityMultiplier = 2.6f; // for example: when we need to travel 4 meters, we need to go at velo 4 * distanceToVelocityMultiplier
 
 const unsigned int ballPredictionSize_ms = 3000;
-const unsigned int ballHistorySize_ms = 4000;
+const unsigned int cachedPredictions = 100;
+const unsigned int ballHistorySize = 401;
 
 const float ballDistanceOptimizeThreshold = 10.0f;
 
@@ -67,14 +76,7 @@ const float defaultPlayerHeight = 1.92f;
 
 const int temporalSmoother_history_ms = 20;
 
-//#define dataSetSortable 1
-#ifdef dataSetSortable
-typedef std::list<int> DataSet;
-#else
-typedef std::deque<int> DataSet;
-#endif
-
-const SDL_Keycode defaultKeyIDs[18] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT, SDLK_w, SDLK_a, SDLK_s, SDLK_d, SDLK_w, SDLK_a, SDLK_s, SDLK_d, SDLK_q, SDLK_z, SDLK_e, SDLK_c, SDLK_F1, SDLK_RETURN };
+typedef std::vector<int> DataSet;
 
 class Player;
 
@@ -116,23 +118,10 @@ enum e_TouchType {
   e_TouchType_SIZE
 };
 
-enum e_SetPiece {
-  e_SetPiece_None,
-  e_SetPiece_KickOff,
-  e_SetPiece_GoalKick,
-  e_SetPiece_FreeKick,
-  e_SetPiece_Corner,
-  e_SetPiece_ThrowIn,
-  e_SetPiece_Penalty,
-};
-
 enum e_MatchPhase {
   e_MatchPhase_PreMatch,
   e_MatchPhase_1stHalf,
   e_MatchPhase_2ndHalf,
-  e_MatchPhase_1stExtraTime,
-  e_MatchPhase_2ndExtraTime,
-  e_MatchPhase_Penalties,
 };
 
 enum e_PlayerCommandModifier {
@@ -143,27 +132,26 @@ enum e_PlayerCommandModifier {
 class IController;
 
 struct TouchInfo {
-
-  TouchInfo() {
-    inputPower = 0;
-    autoDirectionBias = 0;
-    autoPowerBias = 0;
-    targetPlayer = 0;
-    forcedTargetPlayer = 0;
-    desiredPower = 0;
-  }
-
   Vector3         inputDirection;
-  float           inputPower;
+  float           inputPower = 0;
 
-  float           autoDirectionBias;
-  float           autoPowerBias;
+  float           autoDirectionBias = 0;
+  float           autoPowerBias = 0;
 
   Vector3         desiredDirection; // inputdirection after pass function
-  float           desiredPower;
-  Player          *targetPlayer; // null == do not use
-  Player          *forcedTargetPlayer; // null == do not use
-
+  float           desiredPower = 0;
+  Player          *targetPlayer = 0; // null == do not use
+  Player          *forcedTargetPlayer = 0; // null == do not use
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(inputDirection);
+    state->process(inputPower);
+    state->process(autoDirectionBias);
+    state->process(autoPowerBias);
+    state->process(desiredDirection);
+    state->process(desiredPower);
+    state->process(targetPlayer);
+    state->process(forcedTargetPlayer);
+  }
 };
 
 enum e_StrictMovement {
@@ -181,7 +169,7 @@ struct PlayerCommand {
     3: referee showing card
   */
 
-  PlayerCommand() {
+  PlayerCommand() { DO_VALIDATION;
     desiredFunctionType = e_FunctionType_Movement;
     useDesiredMovement = false;
     desiredVelocityFloat = idleVelocity;
@@ -209,7 +197,7 @@ struct PlayerCommand {
   bool           useDesiredLookAt;
   Vector3        desiredLookAt; // absolute 'look at' position on pitch
 
-  bool           useTouchInfo;
+  bool           useTouchInfo = false;
   TouchInfo      touchInfo;
 
   bool           onlyDeflectAnimsThatPickupBall;
@@ -226,47 +214,32 @@ struct PlayerCommand {
   int            specialVar2;
 
   int            modifier;
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(desiredFunctionType);
+    state->process(useDesiredMovement);
+    state->process(desiredDirection);
+    state->process(strictMovement);
+    state->process(desiredVelocityFloat);
+    state->process(useDesiredLookAt);
+    state->process(desiredLookAt);
+    state->process(useTouchInfo);
+    touchInfo.ProcessState(state);
+    state->process(onlyDeflectAnimsThatPickupBall);
+    state->process(useTripType);
+    state->process(tripType);
+    state->process(useDesiredTripDirection);
+    state->process(desiredTripDirection);
+    state->process(useSpecialVar1);
+    state->process(specialVar1);
+    state->process(useSpecialVar2);
+    state->process(specialVar2);
+    state->process(modifier);
+  }
 };
 
 typedef std::vector<PlayerCommand> PlayerCommandQueue;
 
-enum e_PlayerRole {
-  e_PlayerRole_GK,
-  e_PlayerRole_CB,
-  e_PlayerRole_LB,
-  e_PlayerRole_RB,
-  e_PlayerRole_DM,
-  e_PlayerRole_CM,
-  e_PlayerRole_LM,
-  e_PlayerRole_RM,
-  e_PlayerRole_AM,
-  e_PlayerRole_CF,
-};
-
-std::string GetRoleName(e_PlayerRole playerRole);
 e_PlayerRole GetRoleFromString(const std::string &roleString);
-
-struct FormationEntry {
-  e_PlayerRole role;
-  Vector3 databasePosition;
-  Vector3 position; // adapted to player role (combination of databasePosition and hardcoded role position)
-};
-
-struct PlayerImage {
-  int teamID;
-  signed int side;
-  int playerID;
-  Player *player;
-  Vector3 position;
-  Vector3 directionVec;
-  Vector3 bodyDirectionVec;
-  float velocity;
-  Vector3 movement;
-  FormationEntry formationEntry;
-  FormationEntry dynamicFormationEntry;
-};
-
-bool PlayerImageDepthSortFunc(const PlayerImage &a, const PlayerImage &b);
 
 const float pitchHalfW = 55; // only inside side- and backlines
 const float pitchHalfH = 36;
@@ -277,6 +250,75 @@ const float lineHalfW = 0.06f;
 const float goalDepth = 2.55f;
 const float goalHeight = 2.5f;
 const float goalHalfWidth = 3.7f;
+
+const float FORMATION_Y_SCALE = -2.36f;
+
+struct FormationEntry {
+  FormationEntry() { DO_VALIDATION;}
+  // Constructor accepts environment coordinates.
+  FormationEntry(float x, float y, e_PlayerRole role, bool lazy,
+                 bool controllable)
+      : position(x, y * FORMATION_Y_SCALE, 0),
+        start_position(x, y * FORMATION_Y_SCALE, 0),
+        role(role),
+        lazy(lazy),
+        controllable(controllable) {
+    DO_VALIDATION;
+  }
+  bool operator == (const FormationEntry& f) const {
+    return role == f.role &&
+        lazy == f.lazy &&
+        position == f.position &&
+        controllable == f.controllable;
+  }
+  Vector3 position_env() { DO_VALIDATION;
+    return Vector3(position.coords[0],
+                   position.coords[1] / FORMATION_Y_SCALE,
+                   position.coords[2]);
+  }
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(role);
+    state->process(position);
+    state->process(start_position);
+    state->process(lazy);
+    state->process(controllable);
+  }
+  Vector3 position; // adapted to player role (combination of databasePosition and hardcoded role position)
+  Vector3 start_position;
+  e_PlayerRole role = e_PlayerRole_GK;
+  bool lazy = false; // Computer doesn't perform any actions for lazy player.
+  // Can be controlled by the player?
+  bool controllable = true;
+};
+
+struct PlayerImage {
+  Vector3 position;
+  Vector3 directionVec;
+  Vector3 movement;
+  Player *player;
+  e_Velocity velocity = e_Velocity_Idle;
+  e_PlayerRole role;
+  void ProcessState(EnvState* state) { DO_VALIDATION;
+    state->process(position);
+    state->process(directionVec);
+    state->process(movement);
+    state->process(player);
+    state->process(velocity);
+    state->process(role);
+  }
+  void Mirror() { DO_VALIDATION;
+    position.Mirror();
+    directionVec.Mirror();
+    movement.Mirror();
+  }
+};
+
+struct PlayerImagePosition {
+  PlayerImagePosition(const Vector3& position, const Vector3& movement, e_PlayerRole player_role) : position(position), movement(movement), player_role(player_role) { DO_VALIDATION;}
+  Vector3 position;
+  Vector3 movement;
+  e_PlayerRole player_role;
+};
 
 enum e_DecayType {
   e_DecayType_Constant,
@@ -290,49 +332,13 @@ enum e_MagnetType {
 
 // forcefields consist of forcespots, representing a repelling or attracting force from a position, including linearity/etc parameters
 struct ForceSpot {
-  ForceSpot() {
-    exp = 1.0f;
-  }
   Vector3 origin;
   e_MagnetType magnetType;
   e_DecayType decayType;
-  float exp;
-  float power;
-  float scale; // scaled #meters until effect is almost decimated
+  float exp = 1.0f;
+  float power = 0.0f;
+  float scale = 0.0f; // scaled #meters until effect is almost decimated
 };
-
-class PassRating {
-
-  public:
-    PassRating(int playerID, float odds, float pos, float sit) : playerID(playerID), odds(odds), pos(pos), sit(sit), rating(0) {}
-    virtual ~PassRating() {}
-
-    void CalculateRating(float opportunism) {
-      rating = (sit * 1.0f + odds * 1.0f) * 0.5f * (1 - opportunism) +
-               pos * opportunism;
-    }
-
-    bool operator < (const PassRating &otherPassRating) const {
-      return rating < otherPassRating.rating;
-    }
-
-    int playerID;
-
-    // 0 .. 1 == worst .. best
-    float odds; // what are the odds a pass to this player will complete?
-    float pos; // is this player in a good position?
-    float sit; // target's situational rating
-    float rating; // resulting rating
-
-};
-
-typedef std::vector<PassRating> PassRatings;
-
 
 void GetVertexColors(std::map<Vector3, Vector3> &colorCoords);
-
-e_FunctionType StringToFunctionType(const std::string &fun);
-
-float GetGlobalVelocityMultiplier();
-
 #endif

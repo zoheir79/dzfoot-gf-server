@@ -1,3 +1,16 @@
+// Copyright 2019 Google LLC & Bastiaan Konings
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -11,33 +24,34 @@ class PlayerController : public IController {
 
   public:
     PlayerController(Match *match);
-    virtual ~PlayerController() {};
+    virtual ~PlayerController() { DO_VALIDATION;};
 
     virtual void Process();
 
     virtual void SetPlayer(PlayerBase *player);
     Player *CastPlayer();
-    Team *GetTeam() { return team; }
-    Team *GetOppTeam() { return oppTeam; }
+    Team *GetTeam() { DO_VALIDATION; return team; }
+    Team *GetOppTeam() { DO_VALIDATION; return oppTeam; }
 
-    const MentalImage *GetMentalImage() { return _mentalImage; }
+    const MentalImage *GetMentalImage();
 
     virtual int GetReactionTime_ms();
 
     float GetLastSwitchBias();
 
-    float GetFadingTeamPossessionAmount() { return fadingTeamPossessionAmount; }
+    float GetFadingTeamPossessionAmount() { DO_VALIDATION; return fadingTeamPossessionAmount; }
 
-    void AddDefensiveComponent(Vector3 &desiredPosition, float bias, int forcedOppID = -1);
+    void AddDefensiveComponent(Vector3 &desiredPosition, float bias, Player* forcedOpp = 0);
     Vector3 GetDefendPosition(Player *opp, float distance = 0.0f);
 
     virtual void Reset();
+    void ProcessPlayerController(EnvState *state);
 
   protected:
     float OppBetweenBallAndMeDot();
     float CouldWinABallDuelLikeliness();
     virtual void _Preprocess();
-    virtual void _SetInput(const Vector3 &inputDirection, float inputVelocityFloat) { this->inputDirection = inputDirection; this->inputVelocityFloat = inputVelocityFloat; }
+    virtual void _SetInput(const Vector3 &inputDirection, float inputVelocityFloat) { DO_VALIDATION; this->inputDirection = inputDirection; this->inputVelocityFloat = inputVelocityFloat; }
     virtual void _KeeperDeflectCommand(PlayerCommandQueue &commandQueue, bool onlyPickupAnims = false);
     virtual void _SetPieceCommand(PlayerCommandQueue &commandQueue);
     virtual void _BallControlCommand(PlayerCommandQueue &commandQueue, bool idleTurnToOpponentGoal = false, bool knockOn = false, bool stickyRunDirection = false, bool keepCurrentBodyDirection = false);
@@ -47,35 +61,34 @@ class PlayerController : public IController {
     virtual void _MovementCommand(PlayerCommandQueue &commandQueue, bool forceMagnet = false, bool extraHaste = false);
 
     Vector3 inputDirection;
-    float inputVelocityFloat;
+    float inputVelocityFloat = 0.0f;
 
-    Player *_oppPlayer;
-    float _timeNeeded_ms;
-    const MentalImage *_mentalImage;
+    Player *_oppPlayer = nullptr;
+    float _timeNeeded_ms = 0;
+    int _mentalImageTime;
 
     void _CalculateSituation();
 
     // only really useful for human gamers, after switching player
-    unsigned long lastSwitchTime_ms;
-    unsigned int lastSwitchTimeDuration_ms;
+    unsigned long lastSwitchTime_ms = 0;
+    unsigned int lastSwitchTimeDuration_ms = 0;
 
-    Team *team;
-    Team *oppTeam;
+    Team *team = nullptr;
+    Team *oppTeam = nullptr;
 
-    bool hasPossession;
-    bool hasUniquePossession;
-    bool teamHasPossession;
-    bool teamHasUniquePossession;
-    bool oppTeamHasPossession;
-    bool oppTeamHasUniquePossession;
-    bool hasBestPossession;
-    bool teamHasBestPossession;
-    float possessionAmount;
-    float teamPossessionAmount;
-    float fadingTeamPossessionAmount;
-    int timeNeededToGetToBall;
-    int oppTimeNeededToGetToBall;
-    bool hasBestChanceOfPossession;
+    bool hasPossession = false;
+    bool hasUniquePossession = false;
+    bool teamHasPossession = false;
+    bool teamHasUniquePossession = false;
+    bool oppTeamHasPossession = false;
+    bool oppTeamHasUniquePossession = false;
+    bool hasBestPossession = false;
+    bool teamHasBestPossession = false;
+    float possessionAmount = 0.0f;
+    float teamPossessionAmount = 0.0f;
+    float fadingTeamPossessionAmount = 0.0f;
+    int oppTimeNeededToGetToBall = 0;
+    bool hasBestChanceOfPossession = false;
 };
 
 #endif
