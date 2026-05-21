@@ -5,8 +5,9 @@ Dedicated game server for DZFoot — Football 3D AR multiplayer.
 ## Stack
 - C++17 · CMake 3.22+
 - GameplayFootball (physics + AI) — **included as submodule**
-- LiveKit C++ SDK (data channels)
-- ENet fallback UDP
+- LiveKit C++ SDK official (`livekit/client-sdk-cpp`) — **primary**
+- libdatachannel fallback — **automatic if SDK not built**
+- ENet fallback UDP (legacy)
 
 ## Included Source
 
@@ -85,7 +86,7 @@ Le flag `render=False` désactive tout le rendu SDL/OpenGL et garde uniquement l
 | Component | Description | Est. Lines |
 |---|---|---|
 | `main_server.cpp` | Entry point + CLI args, load team config from Catalog Service | ~80 |
-| `LiveKitBridge.h/.cpp` | LiveKit C++ SDK data channel: listen `"in"`, broadcast `"gs"` / `"ev"` | ~300 |
+| `LiveKitBridge.h/.cpp` | LiveKit C++ SDK official (`livekit::Room` + `RoomDelegate`) : listen `"in"`, broadcast `"gs"` / `"ev"`. Fallback libdatachannel si SDK non installé | ~300 |
 | `AnimationStateDetector` | Deduce `anim_id` from internal player state for GameState | ~80 |
 | `StatsAccumulator` | Accumulate match stats from `observations()` | ~100 |
 | `MatchResultPoster` | POST final result JSON to Stats Service (libcurl) | ~50 |
@@ -149,7 +150,9 @@ make -j$(nproc)
 
 - `main_server.cpp` — entry point, CLI args
 - `GameServer.h/.cpp` — 60 tick/s simulation loop
-- `LiveKitBridge.h/.cpp` — WebRTC data channel (topics `gs`, `ev`, `in`)
+- `LiveKitBridge.h` — Unified interface for LiveKit data channels (topics `gs`, `ev`, `in`)
+- `LiveKitBridge.cpp` — Official LiveKit C++ SDK implementation (`livekit::Room` + `RoomDelegate`)
+- `LiveKitBridge_libdatachannel.cpp` — Fallback implementation using libdatachannel (auto-selected by CMake if SDK not built)
 
 ## GameState Protocol
 

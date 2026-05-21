@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  gf-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dzfoot-gf-server:latest
+    container_name: gf-server
+    environment:
+      GFOOTBALL_DATA_DIR: /app/data
+      GFOOTBALL_FONT: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+      # Default URLs for standalone testing (Session Service overrides via CLI args in production)
+      REDIS_URL: redis://redis:6379
+      STATS_URL: http://stats:8000
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_TOKEN: ${LIVEKIT_TOKEN:-}
+    # Default command for standalone testing. Session Service overrides this in production.
+    command:
+      - "--room-id=match-test"
+      - "--team-a=default-a"
+      - "--team-b=default-b"
+      - "--stadium=default-stadium"
+      - "--duration=60"
+      - "--broadcast-hz=20"
+      - "--mode=vs_ai"
+      - "--redis-url=redis://redis:6379"
+      - "--stats-url=http://stats:8000"
+    # No ports exposed — WebRTC uses ephemeral UDP ports via ICE/STUN
+    healthcheck:
+      test: ["CMD", "gf_server", "--room-id=healthcheck", "--duration=1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - dzfoot-network
+    restart: unless-stopped
+    # NOTE: redis is defined in the backend docker-compose.yml.
+    # For standalone testing, run: docker network create dzfoot-network
+
+# Use the same network created by the backend docker-compose.yml
+networks:
+  dzfoot-network:
+    external: true

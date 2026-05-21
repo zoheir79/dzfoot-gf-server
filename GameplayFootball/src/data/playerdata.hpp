@@ -53,6 +53,7 @@ class PlayerData {
     virtual ~PlayerData();
     std::string GetLastName() const { return lastName; }
     inline float GetStat(PlayerStat name) const { return stats.GetReal(name); }
+    inline void SetStat(PlayerStat name, real value) { stats.Set(name, value); }
     float get_physical_velocity() const { return physical_velocity; }
 
     int GetSkinColor() const { return skinColor; }

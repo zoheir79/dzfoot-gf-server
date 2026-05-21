@@ -6,6 +6,12 @@ cmake-build-*/
 *.exe
 gf_server
 
+# Build logs and temp artifacts
+*.log
+build*.log
+build_full.log
+
 .vscode/
 .idea/
 *.swp
+.env

@@ -73,26 +73,45 @@ while true; do
     TEAM_B=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('team_b','default-b'))" 2>/dev/null || echo "default-b")
     STADIUM=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('stadium_id','default-stadium'))" 2>/dev/null || echo "default-stadium")
     DURATION=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('duration',600))" 2>/dev/null || echo "600")
-    
+    MODE=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('mode','vs_ai'))" 2>/dev/null || echo "vs_ai")
+    PLAYER_A=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('player_a',''))" 2>/dev/null || echo "")
+    PLAYER_B=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('player_b',''))" 2>/dev/null || echo "")
+
+    # Extract inline match_config from Session Service and write to local temp file on this VM
+    CONFIG_TMP=""
+    MATCH_CONFIG=$(echo "$PAYLOAD" | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin).get('match_config','')))" 2>/dev/null || echo "")
+    if [ -n "$MATCH_CONFIG" ] && [ "$MATCH_CONFIG" != "null" ] && [ "$MATCH_CONFIG" != "" ]; then
+        CONFIG_TMP="/tmp/gf_${ROOM_ID}.json"
+        echo "$MATCH_CONFIG" > "$CONFIG_TMP"
+    fi
+
     if [ -z "$ROOM_ID" ] || [ -z "$TOKEN" ]; then
         echo "[GF Worker $WORKER_ID] Invalid payload, skipping"
         continue
     fi
-    
+
     LOG_FILE="$LOG_DIR/gf_${ROOM_ID}_$(date +%s).log"
-    
+
     # Spawn GF process in background (detached via nohup inside subshell)
     (
-        nohup "$GF_BINARY" \
-            --room-id="$ROOM_ID" \
-            --team-a="$TEAM_A" \
-            --team-b="$TEAM_B" \
-            --stadium="$STADIUM" \
-            --duration="$DURATION" \
-            --livekit-url="${LIVEKIT_URL:-}" \
-            --livekit-token="$TOKEN" \
-            --stats-url="$STATS_URL" \
-            --redis-url="$REDIS_URL" \
+        SPAWN_ARGS=(
+            --room-id="$ROOM_ID"
+            --team-a="$TEAM_A"
+            --team-b="$TEAM_B"
+            --stadium="$STADIUM"
+            --duration="$DURATION"
+            --mode="$MODE"
+            --broadcast-hz=20
+            --livekit-url="${LIVEKIT_URL:-}"
+            --livekit-token="$TOKEN"
+            --stats-url="$STATS_URL"
+            --redis-url="$REDIS_URL"
+        )
+        [ -n "$PLAYER_A" ] && SPAWN_ARGS+=(--player-a="$PLAYER_A")
+        [ -n "$PLAYER_B" ] && SPAWN_ARGS+=(--player-b="$PLAYER_B")
+        [ -n "$CONFIG_TMP" ] && SPAWN_ARGS+=(--config-file="$CONFIG_TMP")
+
+        nohup "$GF_BINARY" "${SPAWN_ARGS[@]}" \
             > "$LOG_FILE" 2>&1 &
         
         PID=$!
