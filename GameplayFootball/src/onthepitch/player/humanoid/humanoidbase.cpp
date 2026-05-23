@@ -24,6 +24,7 @@
 #include "../../match.hpp"
 
 #include "../../../main.hpp"
+#include "../../../timestep_config.hpp"
 
 #include "../../AIsupport/AIfunctions.hpp"
 
@@ -31,7 +32,7 @@
 
 #include "../../../scene/objectfactory.hpp"
 
-constexpr float bodyRotationSmoothingFactor = 1.0f;
+constexpr float bodyRotationSmoothingFactor = 1.0f * kTimeStepFactor;
 constexpr float bodyRotationSmoothingMaxAngle = 0.25f * pi;
 constexpr float initialReQueueDelayFrames = 32;
 
@@ -609,9 +610,9 @@ void HumanoidBase::UpdateFullbodyModel(bool updateSrc) {
 void HumanoidBase::Process() {
   DO_VALIDATION;
 
-  decayingPositionOffset *= 0.95f;
+  decayingPositionOffset *= std::pow(0.95f, kTimeStepFactor);
   if (decayingPositionOffset.GetLength() < 0.005) decayingPositionOffset.Set(0);
-  decayingDifficultyFactor = clamp(decayingDifficultyFactor - 0.002f, 0.0f, 1.0f);
+  decayingDifficultyFactor = clamp(decayingDifficultyFactor - 0.002f * kTimeStepFactor, 0.0f, 1.0f);
 
 
   assert(match);
@@ -902,7 +903,7 @@ void HumanoidBase::OffsetPosition(const Vector3 &offset) {
   nextStartPos += offset;
   startPos += offset;
   spatialState.position += offset;
-  spatialState.positionOffsetMovement += offset * 100.0f;
+  spatialState.positionOffsetMovement += offset * 100.0f * kTimeStepFactor;
   decayingPositionOffset += offset;
   if (decayingPositionOffset.GetLength() > 0.1f) decayingPositionOffset = decayingPositionOffset.GetNormalized() * 0.1f;
   currentAnim.positionOffset += offset;
@@ -1731,7 +1732,7 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
 
   Vector3 resultingMovement;
 
-  const int timeStep_ms = 10;
+  const int timeStep_ms = int(kTimeStepMs);
 
   bool isBaseAnim = anim->GetVariableCache().baseanim();
 
@@ -2179,16 +2180,16 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
     currentPosition += temporalMovement * (1.0f - penaltyBreakFactor) * (timeStep_ms / 1000.0f);
     assert(currentPosition.coords[2] == 0.0f);
 
-    if (time_ms % 10 == 0) {
+    if (time_ms % timeStep_ms == 0) {
       DO_VALIDATION;
       positions_ret.push_back(currentPosition);
     }
 
     /*
     // dynamic timestep: more precision at high velocities
-    if ((int)time_ms % 10 == 0) { DO_VALIDATION;
+    if ((int)time_ms % int(kTimeStepMs) == 0) { DO_VALIDATION;
       //if (temporalMovement.GetLength() > walkVelocity) timeStep_ms = 5; else
-    timeStep_ms = 10; timeStep_ms = 10;
+    timeStep_ms = int(kTimeStepMs); timeStep_ms = int(kTimeStepMs);
     }
     */
   }

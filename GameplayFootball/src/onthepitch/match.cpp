@@ -16,6 +16,7 @@
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "match.hpp"
+#include "../timestep_config.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -790,7 +791,7 @@ void Match::GetTeamState(SharedInfo *state,
       PlayerInfo info;
       info.player_position = position.coords;
       info.player_direction =
-          (movement / GetGameConfig().physics_steps_per_frame).coords;
+          (movement / GetGameConfig().physics_steps_per_frame).coords; // DZFoot 60Hz: physics_steps_per_frame is now 1
       info.tired_factor = 1 - player->GetFatigueFactorInv();
       info.has_card = player->HasCards();
       info.is_active = player->IsActive();
@@ -811,9 +812,9 @@ void Match::GetState(SharedInfo *state) {
   DO_VALIDATION;
   state->ball_position = ball->GetAveragePosition(5).coords;
   state->ball_rotation =
-      (ball->GetRotation() / GetGameConfig().physics_steps_per_frame).coords;
+      (ball->GetRotation() / GetGameConfig().physics_steps_per_frame).coords; // DZFoot 60Hz: physics_steps_per_frame is now 1
   state->ball_direction =
-      (ball->GetMovement() / GetGameConfig().physics_steps_per_frame).coords;
+      (ball->GetMovement() / GetGameConfig().physics_steps_per_frame).coords; // DZFoot 60Hz: physics_steps_per_frame is now 1
   state->ball_owned_player = -1;
   state->ball_owned_team = -1;
   state->left_goals = GetScore(0);
@@ -860,9 +861,9 @@ bool Match::Process() {
   DO_VALIDATION;
   Vector3 previousBallPos = ball->Predict(0);
   Mirror(reverse, !reverse, reverse);
-  if (!IsInPlay() && referee->GetBuffer().prepareTime + 10 < GetActualTime_ms()) {
+  if (!IsInPlay() && referee->GetBuffer().prepareTime + int(kTimeStepMs) < GetActualTime_ms()) {
     // Do not do simulation when game is on hold to save CPU.
-    BumpActualTime_ms(10);
+    BumpActualTime_ms(int(kTimeStepMs));
     return false;
   }
   Mirror(false, false, reverse);
@@ -924,7 +925,7 @@ bool Match::Process() {
   Mirror(reverse, !reverse, reverse);
   CheckHumanoidCollisions();
 
-  BumpActualTime_ms(10);
+  BumpActualTime_ms(int(kTimeStepMs));
 
   // check for goals
   bool first_team_goal = false;

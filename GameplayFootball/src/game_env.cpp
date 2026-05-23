@@ -113,8 +113,7 @@ void GameEnv::start_game() {
   }
   config->Set("game", 0);
   run_game(config, game_config.render);
-  auto scenario_config = ScenarioConfig::make();
-  reset(*scenario_config, false);
+  reset(this->scenario_config, false);
   DO_VALIDATION;
 }
 
@@ -303,8 +302,8 @@ std::string GameEnv::set_state(const std::string& state) {
 
 void GameEnv::step() {
   DO_VALIDATION;
-  // We do 10 environment steps per second, while game does 100 frames of
-  // physics animation.
+  // DZFoot 60Hz: 60 environment steps per second, each step = 1 physics frame.
+  // physics_steps_per_frame is configured to 1 in GameConfig (main.hpp).
   int steps_to_do = GetGameConfig().physics_steps_per_frame;
   if (GetScenarioConfig().real_time) {
     DO_VALIDATION;

@@ -26,6 +26,7 @@
 #include "../../match.hpp"
 
 #include "../../../main.hpp"
+#include "../../../timestep_config.hpp"
 
 #include "../../AIsupport/AIfunctions.hpp"
 
@@ -47,7 +48,7 @@ constexpr bool enableActionSmuggleDiscard = true;
 constexpr bool forceFullActionSmuggleDiscard = false;
 constexpr bool discardForwardSmuggle = true;
 constexpr bool discardSidewaysSmuggle = false;
-constexpr float bodyRotationSmoothingFactor = 1.0f;
+constexpr float bodyRotationSmoothingFactor = 1.0f * kTimeStepFactor;
 constexpr float bodyRotationSmoothingMaxAngle = animSmoothing ? 0.25f * pi : 0.0f;
 constexpr int initialReQueueDelayFrames = 22;
 constexpr int minRemainingMovementReQueueFrames = 6; // after this # of frames remaining, just let anim finish; we're almost there anyway
@@ -86,9 +87,9 @@ void Humanoid::Process() {
   DO_VALIDATION;
   auto currentMentalImage = match->GetMentalImage(mentalImageTime);
   // this might be the solution to long-term imbalance
-  decayingPositionOffset *= 0.95f;
+  decayingPositionOffset *= std::pow(0.95f, kTimeStepFactor);
   if (decayingPositionOffset.GetLength() < 0.005) decayingPositionOffset.Set(0);
-  decayingDifficultyFactor = clamp(decayingDifficultyFactor - 0.002f, 0.0f, 1.0f);
+  decayingDifficultyFactor = clamp(decayingDifficultyFactor - 0.002f * kTimeStepFactor, 0.0f, 1.0f);
 
   assert(match);
 
@@ -149,27 +150,27 @@ void Humanoid::Process() {
     if (match->GetDesignatedPossessionPlayer() == player &&
         actionDistance < 3.0f) {
       DO_VALIDATION;
-      frameNumPredicate = ((match->GetActualTime_ms() + team_id * 10) % 20) ==
+      frameNumPredicate = ((match->GetActualTime_ms() + team_id * int(10 * kTimeStepFactor)) % int(20 * kTimeStepFactor)) ==
                           0;  // .. 1 .. 2 .. 1 .. 2 ..
 
     } else if (match->GetDesignatedPossessionPlayer() == player) {
       DO_VALIDATION;
-      frameNumPredicate = ((match->GetActualTime_ms() + team_id * 10) % 30) ==
+      frameNumPredicate = ((match->GetActualTime_ms() + team_id * int(10 * kTimeStepFactor)) % int(30 * kTimeStepFactor)) ==
                           0;  // .. 1 .. 2 .. x .. 1 .. 2 .. x ..
 
     } else if (team->GetDesignatedTeamPossessionPlayer() == player) {
       DO_VALIDATION;
-      frameNumPredicate = ((match->GetActualTime_ms() + team_id * 20) % 40) ==
+      frameNumPredicate = ((match->GetActualTime_ms() + team_id * int(20 * kTimeStepFactor)) % int(40 * kTimeStepFactor)) ==
                           0;  // .. 1 .. x .. 2 .. x .. 1 .. x .. 2 ..
 
     } else if (actionDistance < 5.0f) {
       DO_VALIDATION;
-      frameNumPredicate = ((match->GetActualTime_ms() + team_id * 20) % 50) ==
+      frameNumPredicate = ((match->GetActualTime_ms() + team_id * int(20 * kTimeStepFactor)) % int(50 * kTimeStepFactor)) ==
                           0;  // .. 1 .. x .. 2 .. x .. x ..
 
     } else if (actionDistance < 10.0f) {
       DO_VALIDATION;
-      frameNumPredicate = ((match->GetActualTime_ms() + team_id * 40) % 80) ==
+      frameNumPredicate = ((match->GetActualTime_ms() + team_id * int(40 * kTimeStepFactor)) % int(80 * kTimeStepFactor)) ==
                           0;  // .. 1 .. x .. x .. x .. 2 .. x .. x .. x ..
     }
 
@@ -350,7 +351,7 @@ void Humanoid::Process() {
     touchVec = touchVec * (1.0f - bumpyRideBias) + currentBallVec * bumpyRideBias;
 
     match->GetBall()->Touch(touchVec);
-    match->GetBall()->SetRotation(xRot, yRot, 0, 0.2f * (1.0f - bumpyRideBias)); // 0.9
+    match->GetBall()->SetRotation(xRot, yRot, 0, 0.2f * kTimeStepFactor * (1.0f - bumpyRideBias)); // 0.9
     team->SetLastTouchPlayer(CastPlayer(), GetTouchTypeForBodyPart(currentAnim.anim->GetVariable("touch_bodypart")));//, e_TouchType_Accidental);
   }
   // ---------------------- / EXPERIMENTAL ------------------------------------------------

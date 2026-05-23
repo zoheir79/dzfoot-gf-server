@@ -1,0 +1,3 @@
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/libdatachannel-populate.dir
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/edit_cache.dir
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/rebuild_cache.dir

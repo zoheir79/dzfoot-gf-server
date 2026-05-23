@@ -25,12 +25,13 @@
 #include "match.hpp"
 
 #include "../main.hpp"
+#include "../timestep_config.hpp"
 
 constexpr float bounce = 0.62f;  // 1 = full bounce, 0 = no bounce
-constexpr float linearBounce = 0.06f;  // bigger = more brake force
-constexpr float drag = 0.015f;  // bigger = more
-constexpr float friction = 0.04f;  // bigger = more
-constexpr float linearFriction = 1.6f;  // bigger = more, arbitrary scale;
+constexpr float linearBounce = 0.06f * kTimeStepFactor;  // bigger = more brake force
+constexpr float drag = 0.015f * kTimeStepFactor;  // bigger = more
+constexpr float friction = 0.04f * kTimeStepFactor;  // bigger = more
+constexpr float linearFriction = 1.6f * kTimeStepFactor;  // bigger = more, arbitrary scale;
 constexpr float gravity = -9.81f;
 constexpr float grassHeight = 0.025f;
 
@@ -120,11 +121,11 @@ void Ball::SetMomentum(const Vector3 &target) {
 void Ball::SetRotation(real x, real y, real z, float bias) {
   DO_VALIDATION;  // radians per second for each axis
   Quaternion rotX;
-  rotX.SetAngleAxis(clamp(x * 0.001f, -pi * 0.49f, pi * 0.49f), Vector3(-1, 0, 0));
+  rotX.SetAngleAxis(clamp(x * 0.001f * kTimeStepFactor, -pi * 0.49f, pi * 0.49f), Vector3(-1, 0, 0));
   Quaternion rotY;
-  rotY.SetAngleAxis(clamp(y * 0.001f, -pi * 0.49f, pi * 0.49f), Vector3(0, 1, 0));
+  rotY.SetAngleAxis(clamp(y * 0.001f * kTimeStepFactor, -pi * 0.49f, pi * 0.49f), Vector3(0, 1, 0));
   Quaternion rotZ;
-  rotZ.SetAngleAxis(clamp(z * 0.001f, -pi * 0.49f, pi * 0.49f), Vector3(0, 0, 1));
+  rotZ.SetAngleAxis(clamp(z * 0.001f * kTimeStepFactor, -pi * 0.49f, pi * 0.49f), Vector3(0, 0, 1));
 
   Quaternion tmpRotation_ms = rotX * rotY * rotZ;
   rotation_ms = rotation_ms.GetSlerped(bias, tmpRotation_ms);
@@ -155,16 +156,18 @@ BallSpatialInfo Ball::CalculatePrediction() {
   constexpr bool groundRotationEffects_enabled = true;
   constexpr bool swerve_enabled = true;
 
-  constexpr float timeStep = 0.01f;//0.001f; // seconds
+  constexpr float timeStep = kTimeStepS; // DZFoot 60Hz: ~0.016667 seconds
 
   bool firstTime = true;
   bool use_cache = false;
 
   ballTouchesNet = false;
 
-  for (unsigned int predictTime_ms = int(timeStep * 1000.0f);
+  // DZFoot 60Hz: prediction loop keeps 10ms step for array indexing.
+  // Physics calculations inside use kTimeStepS (~16.667ms) for accuracy.
+  for (unsigned int predictTime_ms = 10;
        predictTime_ms < ballPredictionSize_ms + cachedPredictions * 10;
-       predictTime_ms += int(timeStep * 1000.0f)) {
+       predictTime_ms += 10) {
     DO_VALIDATION;
     // Originally game was recomputing ball's prediction for 300 steps into the
     // future, which was expensive. Now we cache 100 additional steps and if

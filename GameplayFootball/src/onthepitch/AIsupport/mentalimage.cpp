@@ -18,6 +18,7 @@
 #include "mentalimage.hpp"
 
 #include "../../main.hpp"
+#include "../../timestep_config.hpp"
 #include "../match.hpp"
 
 MentalImage::MentalImage(Match* match)
@@ -133,8 +134,8 @@ void MentalImage::UpdateBallPredictions() {
 Vector3 MentalImage::GetBallPrediction(int time_ms) const {
 
   int index = time_ms + match->GetActualTime_ms() - timeStamp_ms;
-  if (index >= ballPredictionSize_ms) index = ballPredictionSize_ms - 10;
-  index = index / 10;
+  if (index >= ballPredictionSize_ms) index = ballPredictionSize_ms - int(kTimeStepMs);
+  index = index / int(kTimeStepMs);
   if (index < 0) index = 0;
 
   Vector3 mentalResult = ballPredictions[index];

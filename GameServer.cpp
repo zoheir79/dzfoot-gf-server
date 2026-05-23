@@ -15,6 +15,7 @@
 #include "game_env.hpp"
 #include "gfootball_actions.h"
 #include "gamedefines.hpp"
+#include "timestep_config.hpp"
 
 // GF internal headers for deep state extraction
 #include "main.hpp"
@@ -145,29 +146,18 @@ void Server::run() {
     gameEnv_ = new GameEnv();
 
     // Configure GF match parameters BEFORE start_game().
-    // GF loads default 4-3-3 formations from teamdata XML when left_team/right_team are empty.
-    // We ONLY override the controllable-agent counts and duration.
+    // With the fixed start_game() (uses this->scenario_config), we must
+    // pre-fill formations so GF can initialise controllers correctly.
     auto& sc = gameEnv_->scenario_config;
     sc.left_agents = 1;                           // always 1 human on left
     sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0;  // 1 human for 1v1, 0 for vs AI
     sc.game_duration = cfg_.duration * 10;          // GF steps (10 steps/sec)
 
-    gameEnv_->start_game();
+    // Pre-fill default 4-3-3 formations (avoids empty-team crash)
+    if (sc.left_team.empty()) appendDefault433(sc.left_team, true);
+    if (sc.right_team.empty()) appendDefault433(sc.right_team, false);
 
-    // start_game() overwrites scenario_config with empty vectors.
-    // We MUST refill them so GetState() can size left/right_controllers correctly.
-    if (sc.left_team.empty()) {
-        for (int i = 0; i < 11; ++i)
-            sc.left_team.emplace_back(0.0f, 0.0f, e_PlayerRole_GK, false, true);
-    }
-    if (sc.right_team.empty()) {
-        for (int i = 0; i < 11; ++i)
-            sc.right_team.emplace_back(0.0f, 0.0f, e_PlayerRole_GK, false, true);
-    }
-    // Override agent counts after start_game() reset them to defaults
-    sc.left_agents = 1;
-    sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0;
-    sc.game_duration = cfg_.duration * 10;
+    gameEnv_->start_game();
 
     std::cout << "[GameServer] GF engine started (headless)" << std::endl;
 
@@ -261,11 +251,10 @@ void Server::run() {
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
-    // GameplayFootball runs at 10 environment-steps/sec by design (each step()
-    // advances 10 physics frames = 100 ms simulated). We cadence the loop at
-    // simTicksPerSec to match that, and broadcast at broadcastRateHz (capped to
-    // simTicksPerSec since we cannot produce more states than env-steps).
-    const int simTicksPerSec = 10;
+    // DZFoot 60Hz refactor: 60 environment-steps/sec, each step() = 1 physics frame.
+    // physics_steps_per_frame is now 1 (see main.hpp).
+    // We cadence the loop at simTicksPerSec and broadcast at broadcastRateHz.
+    const int simTicksPerSec = 60;
     const auto framePeriod = std::chrono::microseconds(1'000'000 / simTicksPerSec);
     int broadcastHz = std::min(cfg_.broadcastRateHz, simTicksPerSec);
     if (broadcastHz < 1) broadcastHz = 1;
@@ -301,8 +290,8 @@ void Server::run() {
             broadcastGameState();
         }
 
-        // 1 Hz heartbeat
-        if (tickCounter_ % simTicksPerSec == 0 && redis_ && redis_->isConfigured()) {
+        // 1 Hz heartbeat (every 60 ticks)
+        if (tickCounter_ % 60 == 0 && redis_ && redis_->isConfigured()) {
             auto now = std::chrono::system_clock::now().time_since_epoch();
             auto sec = std::chrono::duration_cast<std::chrono::seconds>(now).count();
             redis_->hset("gf.heartbeat", cfg_.roomId, std::to_string(sec));
@@ -326,9 +315,13 @@ void Server::run() {
 void Server::tick() {
     ++tickCounter_;
     currentState_.tick = tickCounter_;
-    // 10 env-steps/s -> each tick = 100 ms wall time
-    currentState_.timestampUs = baseTimestampUs_ + static_cast<uint64_t>(tickCounter_) * 100'000ULL;
-    currentState_.timer = tickCounter_ * 0.1f;
+    if (tickCounter_ % 60 == 0) {
+        std::cout << "[GameServer] tick " << tickCounter_ << " timer=" << currentState_.timer << "s" << std::endl;
+    }
+    // 60 env-steps/s -> each tick = 16.666... ms wall time
+    const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(kSimFrequencyHz);
+    currentState_.timestampUs = baseTimestampUs_ + static_cast<uint64_t>(tickCounter_) * usPerTick;
+    currentState_.timer = tickCounter_ * (1.0f / static_cast<float>(kSimFrequencyHz));
 
     if (gameEnv_) {
         applyPendingInputs();

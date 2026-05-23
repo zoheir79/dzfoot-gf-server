@@ -61,3 +61,9 @@ set(GF_LINK_LIBS
 list(APPEND GF_LINK_LIBS datachannel)
 
 target_link_libraries(gf_server ${GF_LINK_LIBS})
+
+# Optional: build 60Hz physics validation test (disabled by default to keep prod build fast)
+option(BUILD_60HZ_TEST "Build 60Hz physics validation test executable" OFF)
+if(BUILD_60HZ_TEST)
+    add_subdirectory(tests)
+endif()

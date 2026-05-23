@@ -18,6 +18,7 @@
 #include "teamAIcontroller.hpp"
 
 #include <cmath>
+#include "../timestep_config.hpp"
 
 #include "AIsupport/AIfunctions.hpp"
 
@@ -172,7 +173,7 @@ void TeamAIController::Process() {
     info.dangerFactor = 1.0 - NormalizedClamp((players[i]->GetPosition() - mostDangerousPos).GetLength(), 0, pitchHalfW * 2);
 
     // player on ball is most dangerous
-    info.dangerFactor *= 0.95f;
+    info.dangerFactor *= std::pow(0.95f, kTimeStepFactor);
     if (players[i] == match->GetTeam(abs(team->GetID() - 1))->GetDesignatedTeamPossessionPlayer()) info.dangerFactor += 0.05f;
 
     tacticalOpponentInfo.push_back(info);

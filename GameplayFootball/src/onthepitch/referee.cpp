@@ -17,6 +17,7 @@
 
 #include "referee.hpp"
 #include <cmath>
+#include "../timestep_config.hpp"
 
 #include "../scene/objectfactory.hpp"
 #include "match.hpp"
@@ -267,7 +268,7 @@ void Referee::Process() {
     }
   }
 
-  if (afterSetPieceRelaxTime_ms > 0) afterSetPieceRelaxTime_ms -= 10;
+  if (afterSetPieceRelaxTime_ms > 0) afterSetPieceRelaxTime_ms -= int(kTimeStepMs);
 }
 
 void Referee::PrepareSetPiece(e_GameMode setPiece) {

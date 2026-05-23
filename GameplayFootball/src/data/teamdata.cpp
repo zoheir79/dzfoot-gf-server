@@ -134,20 +134,76 @@ TeamData::TeamData(int teamDatabaseID, const std::vector<FormationEntry> &f) {
   switch (teamDatabaseID) {
     DO_VALIDATION;
     case 3:
-      name = "Frequentists United";
-      logo_url = "images_teams/primeradivision/fcbarcelona_logo.png";
-      kit_url = "images_teams/primeradivision/fcbarcelona";
-      shortName = "FRQ";
-      color1 = Vector3(255, 100, 100);
-      color2 = Vector3(100, 100, 255);
+      name = "CR Belouizdad";
+      logo_url = "images_teams/ligue1dz/409_logo.bmp";
+      kit_url = "images_teams/ligue1dz/crbelouizdad_dzfoot";
+      shortName = "CRB";
+      color1 = Vector3(220, 0, 0);    // red home
+      color2 = Vector3(255, 255, 255); // white
       break;
     case 8:
-      name = "Real Bayesians";
-      logo_url = "images_teams/primeradivision/realmadrid_logo.png";
-      kit_url = "images_teams/primeradivision/realmadrid";
-      shortName = "RBA";
-      color1 = Vector3(255, 255, 255);
-      color2 = Vector3(50, 50, 126);
+      name = "JS Kabylie";
+      logo_url = "images_teams/ligue1dz/670_logo.bmp";
+      kit_url = "images_teams/ligue1dz/jskabylie_dzfoot";
+      shortName = "JSK";
+      color1 = Vector3(255, 215, 0);  // yellow home
+      color2 = Vector3(0, 128, 0);    // green
+      break;
+    case 10:
+      name = "MC Alger";
+      logo_url = "images_teams/ligue1dz/672_logo.bmp";
+      kit_url = "images_teams/ligue1dz/mcalger_dzfoot";
+      shortName = "MCA";
+      color1 = Vector3(220, 0, 0);    // red
+      color2 = Vector3(0, 128, 0);    // green
+      break;
+    case 11:
+      name = "USM Alger";
+      logo_url = "images_teams/ligue1dz/673_logo.bmp";
+      kit_url = "images_teams/ligue1dz/usmalger_dzfoot";
+      shortName = "USM";
+      color1 = Vector3(0, 0, 0);      // black
+      color2 = Vector3(220, 0, 0);    // red
+      break;
+    case 12:
+      name = "ES Setif";
+      logo_url = "images_teams/ligue1dz/675_logo.bmp";
+      kit_url = "images_teams/ligue1dz/essetif_dzfoot";
+      shortName = "ESS";
+      color1 = Vector3(0, 0, 0);      // black
+      color2 = Vector3(255, 255, 255); // white
+      break;
+    case 13:
+      name = "CS Constantine";
+      logo_url = "images_teams/ligue1dz/674_logo.bmp";
+      kit_url = "images_teams/ligue1dz/csconstantine_dzfoot";
+      shortName = "CSC";
+      color1 = Vector3(220, 0, 0);    // red
+      color2 = Vector3(0, 128, 0);    // green
+      break;
+    case 14:
+      name = "Paradou AC";
+      logo_url = "images_teams/ligue1dz/678_logo.bmp";
+      kit_url = "images_teams/ligue1dz/paradouac_dzfoot";
+      shortName = "PAC";
+      color1 = Vector3(255, 215, 0);  // yellow
+      color2 = Vector3(0, 0, 200);   // blue
+      break;
+    case 15:
+      name = "ASO Chlef";
+      logo_url = "images_teams/ligue1dz/653_logo.bmp";
+      kit_url = "images_teams/ligue1dz/asochlef_dzfoot";
+      shortName = "ASO";
+      color1 = Vector3(255, 140, 0);  // orange
+      color2 = Vector3(0, 0, 0);    // black
+      break;
+    case 16:
+      name = "MC Oran";
+      logo_url = "images_teams/ligue1dz/657_logo.bmp";
+      kit_url = "images_teams/ligue1dz/mcoran_dzfoot";
+      shortName = "MCO";
+      color1 = Vector3(220, 0, 0);    // red
+      color2 = Vector3(255, 255, 255); // white
       break;
   }
 

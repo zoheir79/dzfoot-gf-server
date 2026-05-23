@@ -1,0 +1,41 @@
+# DZFoot GF Server — Docker build context exclusions
+# Keep only what's needed to compile gf_server + GameplayFootball
+
+# Git
+.git/
+.gitignore
+
+# Build artifacts & logs (massive, invalidate cache)
+build_*.log
+*.log
+build/
+build_container/
+
+# Tests (not compiled in production image)
+tests/
+test_*.json
+test_*.log
+gf_test*.log
+
+# Deployment & orchestration (not needed at compile time)
+deploy.ps1
+docker-compose.yml
+run.sh
+build_and_test.sh
+build_server.sh
+
+# Utility scripts (not part of server binary)
+generate_dzfoot_kits.py
+replace_sponsor.py
+scripts/
+
+# Misc
+.env.example
+sdk_build_info.log
+README.md
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

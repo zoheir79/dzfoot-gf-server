@@ -17,6 +17,7 @@
 
 #include "humanoid_utils.hpp"
 #include <cmath>
+#include "../../../timestep_config.hpp"
 
 #include "../../../main.hpp"
 
@@ -65,7 +66,7 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
     // simple version for debugging purposes
     unsigned int adaptedFrameNum = std::min(std::max(frameNum, (unsigned int)1),
     (unsigned int)positions.size() - 1); return (positions.at(adaptedFrameNum) -
-    positions.at(adaptedFrameNum - 1)).Get2D() * 100.0f;
+    positions.at(adaptedFrameNum - 1)).Get2D() * 100.0f * kTimeStepFactor;
   */
 
   assert(frameNum < positions.size());
@@ -73,12 +74,12 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
   // special case: want the exit movement to be unsmoothed, for we don't want the wrong quantized velocity and such
   if (frameNum == positions.size() - 1) {
     DO_VALIDATION;
-    return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)).Get2D() * 100.0f;
+    return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)).Get2D() * 100.0f * kTimeStepFactor;
   }
   // special case: if we want the movement at frame 0, we can't get -1 to 0, we need to get 0 to 1 instead
   if (frameNum == 0) {
     DO_VALIDATION;
-    return (positions.at(1) - positions.at(0)).Get2D() * 100.0f;
+    return (positions.at(1) - positions.at(0)).Get2D() * 100.0f * kTimeStepFactor;
   }
 
   Vector3 totalMovement;
@@ -88,7 +89,7 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
     DO_VALIDATION;
     if (frame > 0 && frame < (signed int)positions.size()) {
       DO_VALIDATION;  // was: frame > 1 (i think that was a bug)
-      totalMovement += (positions.at(frame) - positions.at(frame - 1)).Get2D() * 100.0f;
+      totalMovement += (positions.at(frame) - positions.at(frame - 1)).Get2D() * 100.0f * kTimeStepFactor;
       count++;
     }
   }

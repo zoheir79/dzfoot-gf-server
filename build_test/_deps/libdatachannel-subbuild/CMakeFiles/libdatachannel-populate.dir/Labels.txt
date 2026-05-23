@@ -1,0 +1,14 @@
+# Target labels
+ libdatachannel-populate
+# Source files and their labels
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/libdatachannel-populate
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/libdatachannel-populate.rule
+/src/build_test/_deps/libdatachannel-subbuild/CMakeFiles/libdatachannel-populate-complete.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-build.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-configure.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-download.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-install.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-mkdir.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-patch.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-test.rule
+/src/build_test/_deps/libdatachannel-subbuild/libdatachannel-populate-prefix/src/libdatachannel-populate-stamp/libdatachannel-populate-update.rule

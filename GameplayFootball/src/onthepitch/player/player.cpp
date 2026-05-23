@@ -26,6 +26,7 @@
 #include "controller/strategies/strategy.hpp"
 
 #include "../../main.hpp"
+#include "../../timestep_config.hpp"
 #include "../../utils.hpp"
 
 #include "../../base/geometry/triangle.hpp"
@@ -191,7 +192,7 @@ void Player::UpdatePossessionStats() {
   }
 
   bool refine = false;
-  unsigned int timeStep_ms = 10;
+  unsigned int timeStep_ms = int(kTimeStepMs);
   unsigned int previous_ms = 0;
   bool precise = (team->GetDesignatedTeamPossessionPlayer() == this) ? true : false;
   float previousDist = 0; // debug
@@ -217,7 +218,7 @@ void Player::UpdatePossessionStats() {
           DO_VALIDATION;
 
           ms = previous_ms;
-          timeStep_ms = 10;
+          timeStep_ms = int(kTimeStepMs);
           refine = true;
           // found!
         } else {
@@ -235,11 +236,11 @@ void Player::UpdatePossessionStats() {
       // how long does it take for the ball at max velo to travel balldist?
       unsigned int timeToGo_ms =
           int(std::round((balldist / maxBallVelo) * 1000.0f));
-      timeStep_ms = clamp(timeToGo_ms, 10, 500);
-      // round to 10s
-      timeStep_ms = (timeStep_ms / 10) * 10;
+      timeStep_ms = clamp(timeToGo_ms, int(kTimeStepMs), 500);
+      // round to kTimeStepMs
+      timeStep_ms = (timeStep_ms / int(kTimeStepMs)) * int(kTimeStepMs);
     } else
-      timeStep_ms = 10;
+      timeStep_ms = int(kTimeStepMs);
 
     previous_ms = ms;
   }
@@ -299,7 +300,7 @@ void Player::Process() {
   if (isActive) {
     DO_VALIDATION;
 
-    desiredTimeToBall_ms = std::max(desiredTimeToBall_ms - 10, 0);
+    desiredTimeToBall_ms = std::max(desiredTimeToBall_ms - int(kTimeStepMs), 0);
 
     if (ExternalControllerActive()) externalController->GetHumanController()->Process();
     CastController()->Process();
@@ -312,7 +313,7 @@ void Player::Process() {
         DO_VALIDATION;
       }
       DO_VALIDATION;
-      if (hasPossession) possessionDuration_ms += 10; else possessionDuration_ms = 0;
+      if (hasPossession) possessionDuration_ms += int(kTimeStepMs); else possessionDuration_ms = 0;
       if ((match->GetActualTime_ms() + GetStableID() * 10) % 100 == 0) {
         DO_VALIDATION;
         _CalculateTacticalSituation();
@@ -326,7 +327,7 @@ void Player::Process() {
     if (match->IsInPlay()) {
       Vector3 posAfter = CastHumanoid()->GetPosition();
       float distance = (posAfter - posBefore).GetLength();
-      fatigueFactorInv -= distance * 0.00003f * (2.0f - GetStaminaStat()) * (1.0f / match->GetMatchDurationFactor());
+      fatigueFactorInv -= distance * 0.00003f * kTimeStepFactor * (2.0f - GetStaminaStat()) * (1.0f / match->GetMatchDurationFactor());
       fatigueFactorInv = clamp(fatigueFactorInv, 0.01f, 1.0f);
     }
     // Don't send off the last player on the team.

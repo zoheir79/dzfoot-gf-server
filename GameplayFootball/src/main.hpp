@@ -70,7 +70,8 @@ class GameConfig {
   // Directory with textures and other resources.
   std::string data_dir;
   // How many physics animation steps are done per single environment step.
-  int physics_steps_per_frame = 10;
+  // DZFoot 60Hz: 1 step per frame (60 env steps/sec, 60 physics steps/sec).
+  int physics_steps_per_frame = 1;
   int render_resolution_x = 1280;
   int render_resolution_y = 720;
   std::string updatePath(const std::string& path) {

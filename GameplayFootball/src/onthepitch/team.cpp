@@ -17,6 +17,7 @@
 // so don't ask. to be used for inspiration :)
 
 #include "team.hpp"
+#include "../timestep_config.hpp"
 
 #include "../gamedefines.hpp"
 #include "../main.hpp"
@@ -368,7 +369,7 @@ void Team::Process() {
       clamp(teamPossessionAmount, 0.5f, 1.5f) * 0.005f;
   fadingTeamPossessionAmount +=
       clamp(tmpFadingTeamPossessionAmount - fadingTeamPossessionAmount,
-            -0.005f, 0.005f);  // maximum change per 10ms
+            -0.005f * kTimeStepFactor, 0.005f * kTimeStepFactor);  // maximum change per timestep
 
   if (!match->IsInPlay() || match->IsInSetPiece() ||
       match->GetBallRetainer() != 0) {

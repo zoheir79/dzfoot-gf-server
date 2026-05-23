@@ -16,6 +16,7 @@
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "../../../main.hpp"
+#include "../../../timestep_config.hpp"
 
 #include "elizacontroller.hpp"
 
@@ -120,7 +121,7 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
              0.4f)
             .GetNormalized(player->GetDirectionVec());
     command.desiredVelocityFloat = ClampVelocity(
-        player->GetFloatVelocity() * 0.95f - boostrandom(0.0f, 3.2f));
+        player->GetFloatVelocity() * std::pow(0.95f, kTimeStepFactor) - boostrandom(0.0f, 3.2f));
     //}
     command.useDesiredLookAt = true;
     command.desiredLookAt =
