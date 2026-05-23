@@ -1879,14 +1879,14 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
   }
 
   // --- loop da loop ------------------------------------------------------------------------------------------------------------------------------------------
-  for (int time_ms = 0; time_ms < anim->GetFrameCount() * 10;
+  for (int time_ms = 0; time_ms < anim->GetFrameCount() * timeStep_ms;
        time_ms += timeStep_ms) {
     DO_VALIDATION;
 
     // start with +1, because we want to influence the first frame as well
     // as for finishing, finish with frameBias = 1.0, even if the last frame is 'spiritually' the one-to-last, since the first frame of the next anim is actually 'same-tempered' as the current anim's last frame.
     // however, it works best to have all values 'done' at this one-to-last frame, so the next anim can read out these correct (new starting) values.
-    float frameBias = (time_ms + 10) / (float)((anim->GetEffectiveFrameCount() + 1) * 10);
+    float frameBias = (time_ms + timeStep_ms) / (float)((anim->GetEffectiveFrameCount() + 1) * timeStep_ms);
 
     float lagExp = 1.0f;
     if (mod_PointinessCurve && physicsBias > 0.0f &&
@@ -1903,7 +1903,7 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
       }
 
       lagExp = clamp(lagExp, 0.25f, 4.0f);
-      if (touch && time_ms < animTouchFrame * 10) lagExp = std::max(lagExp, 0.7f); // else, we could 'miss' the ball because we're already turned around too much
+      if (touch && time_ms < animTouchFrame * timeStep_ms) lagExp = std::max(lagExp, 0.7f); // else, we could 'miss' the ball because we're already turned around too much
 
       lagExp = lagExp * physicsBias + 1.0f * (1.0f - physicsBias);
     }
@@ -1995,10 +1995,10 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
       // slow down after touching ball
       // (precalc at touchframe, because temporalMovement will change because of this, so if we don't precalc then changing numBrakeFrames will change the amount of effect)
       int numBrakeFrames = 15;
-      if (touch && time_ms >= animTouchFrame * 10 &&
-          time_ms < (animTouchFrame + numBrakeFrames) * 10) {
+      if (touch && time_ms >= animTouchFrame * timeStep_ms &&
+          time_ms < (animTouchFrame + numBrakeFrames) * timeStep_ms) {
         DO_VALIDATION;
-        int brakeFramesInto = (time_ms - (animTouchFrame * 10)) / 10;
+        int brakeFramesInto = (time_ms - (animTouchFrame * timeStep_ms)) / timeStep_ms;
         float brakeFrameFactor =
             std::pow(1.0f - (brakeFramesInto / (float)numBrakeFrames), 0.5f);
 
@@ -2155,7 +2155,7 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
     Vector3 tmpTemporalMovement = temporalMovement + toDesired;
 
     // make sure outgoing velocity is of the same idleness as the anim
-    if (time_ms >= (anim->GetFrameCount() - 2) * 10) {
+    if (time_ms >= (anim->GetFrameCount() - 2) * timeStep_ms) {
       DO_VALIDATION;
 
       bool hardQuantize = true;
@@ -2176,7 +2176,7 @@ Vector3 HumanoidBase::CalculatePhysicsVector(Animation *anim, bool useDesiredMov
     assert(tmpTemporalMovement.coords[2] == 0.0f);
     temporalMovement = tmpTemporalMovement;
 
-    if (time_ms >= (anim->GetFrameCount() - 2) * 10) penaltyBreakFactor = 0.0f;
+    if (time_ms >= (anim->GetFrameCount() - 2) * timeStep_ms) penaltyBreakFactor = 0.0f;
     currentPosition += temporalMovement * (1.0f - penaltyBreakFactor) * (timeStep_ms / 1000.0f);
     assert(currentPosition.coords[2] == 0.0f);
 
