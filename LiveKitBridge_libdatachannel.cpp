@@ -24,7 +24,9 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
     identity_ = "gf_server_" + roomId;
 
     try {
-        ws_ = std::make_unique<rtc::WebSocket>();
+        rtc::WebSocketConfiguration wsConfig;
+        wsConfig.protocols = {"livekit-protocol"};
+        ws_ = std::make_unique<rtc::WebSocket>(wsConfig);
 
         ws_->onOpen([this]() {
             std::cout << "[LiveKitBridge] WS open, joining room " << roomId_ << std::endl;
@@ -41,6 +43,11 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
             if (std::holds_alternative<std::string>(msg)) {
                 std::string raw = std::get<std::string>(msg);
                 std::cout << "[LiveKitBridge] WS msg: " << raw.substr(0, 200) << std::endl;
+                handleSignaling(raw);
+            } else if (std::holds_alternative<std::vector<uint8_t>>(msg)) {
+                auto& data = std::get<std::vector<uint8_t>>(msg);
+                std::cout << "[LiveKitBridge] WS binary msg: " << data.size() << " bytes" << std::endl;
+                std::string raw(data.begin(), data.end());
                 handleSignaling(raw);
             }
         });
