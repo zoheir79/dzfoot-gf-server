@@ -39,7 +39,9 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
 
         ws_->onMessage([this](rtc::message_variant msg) {
             if (std::holds_alternative<std::string>(msg)) {
-                handleSignaling(std::get<std::string>(msg));
+                std::string raw = std::get<std::string>(msg);
+                std::cout << "[LiveKitBridge] WS msg: " << raw.substr(0, 200) << std::endl;
+                handleSignaling(raw);
             }
         });
 
@@ -52,7 +54,7 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
         });
 
         // LiveKit signaling endpoint: token passed as query param
-        std::string wsUrl = url_ + "/?access_token=" + token_;
+        std::string wsUrl = url_ + "/rtc?access_token=" + token_;
         ws_->open(wsUrl);
 
         connected_.store(true);
