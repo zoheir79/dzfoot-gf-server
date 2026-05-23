@@ -18,6 +18,7 @@
 #include "AIfunctions.hpp"
 
 #include <cmath>
+#include "../../timestep_config.hpp"
 
 #include "mentalimage.hpp"
 
