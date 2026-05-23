@@ -151,7 +151,7 @@ void Server::run() {
     auto& sc = gameEnv_->scenario_config;
     sc.left_agents = 1;                           // always 1 human on left
     sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0;  // 1 human for 1v1, 0 for vs AI
-    sc.game_duration = cfg_.duration * 10;          // GF steps (10 steps/sec)
+    sc.game_duration = cfg_.duration * kSimFrequencyHz;  // GF steps (60 steps/sec)
 
     // Pre-fill default 4-3-3 formations (avoids empty-team crash)
     if (sc.left_team.empty()) appendDefault433(sc.left_team, true);
@@ -165,7 +165,7 @@ void Server::run() {
     if (!cfg_.matchConfigPath.empty()) {
         MatchConfig mcfg;
         if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
-            sc.game_duration = mcfg.duration_seconds * 10;
+            sc.game_duration = mcfg.duration_seconds * kSimFrequencyHz;
             if (!mcfg.left_team.formation.empty()) {
                 sc.left_team = buildFormation(mcfg.left_team);
             }

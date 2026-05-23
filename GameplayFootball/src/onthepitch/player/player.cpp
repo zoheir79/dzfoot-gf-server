@@ -175,7 +175,7 @@ void Player::UpdatePossessionStats() {
   timeNeededToGetToBall_ms = std::max(
       ballPredictionSize_ms,
       (unsigned int)(std::round(
-          (match->GetBall()->Predict(ballPredictionSize_ms - 10).Get2D() -
+          (match->GetBall()->Predict(ballPredictionSize_ms - int(kTimeStepMs)).Get2D() -
            (GetPosition() + GetMovement() * 0.2f))
               .GetLength() /
           (GetMaxVelocity() * 0.75f) * 1000)));

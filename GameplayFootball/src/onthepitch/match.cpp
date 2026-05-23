@@ -821,8 +821,8 @@ void Match::GetState(SharedInfo *state) {
   state->right_goals = GetScore(1);
   // Report a step before game starts as in play, so that we know which players
   // are controlled by agents and which are controlled using action_builtin_ai.
-  // 1900 = 2000 (game start) - 100 (single step time).
-  state->is_in_play = IsInPlay() || GetActualTime_ms() == 1900;
+  // DZFoot 60Hz: 2000 (game start) - int(kTimeStepMs) (single step time).
+  state->is_in_play = IsInPlay() || GetActualTime_ms() == 2000 - int(kTimeStepMs);
   state->game_mode = IsInSetPiece() ? referee->GetBuffer().desiredSetPiece : e_GameMode_Normal;
   state->left_controllers.clear();
   state->left_controllers.resize(GetScenarioConfig().left_team.size());

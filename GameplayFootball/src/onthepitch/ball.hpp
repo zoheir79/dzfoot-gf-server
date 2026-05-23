@@ -23,6 +23,7 @@
 #include "../scene/objects/geometry.hpp"
 
 #include "../gamedefines.hpp"
+#include "../timestep_config.hpp"
 #include "../utils.hpp"
 
 using namespace blunted;
@@ -49,8 +50,8 @@ class Ball {
 
     inline Vector3 Predict(int predictTime_ms) const {
       int index = predictTime_ms;
-      if (index >= ballPredictionSize_ms) index = ballPredictionSize_ms - 10;
-      index = index / 10;
+      if (index >= ballPredictionSize_ms) index = ballPredictionSize_ms - int(kTimeStepMs);
+      index = index / int(kTimeStepMs);
       if (index < 0) index = 0;
       return predictions[index];
     }
@@ -62,7 +63,7 @@ class Ball {
     void SetPosition(const Vector3 &target);
     void SetMomentum(const Vector3 &target);
     void SetRotation(real x, real y, real z, float bias = 1.0);     // radians per second for each axis
-    BallSpatialInfo CalculatePrediction();  // returns momentum in 10ms
+    BallSpatialInfo CalculatePrediction();
 
     bool BallTouchesNet() { DO_VALIDATION; return ballTouchesNet; }
     Vector3 GetAveragePosition(unsigned int duration_ms) const;
@@ -78,7 +79,7 @@ class Ball {
     Vector3 momentum;
     Quaternion rotation_ms;
 
-    Vector3 predictions[ballPredictionSize_ms / 10 + cachedPredictions + 1];
+    Vector3 predictions[ballPredictionSize_ms / int(kTimeStepMs) + cachedPredictions + 1];
     int valid_predictions = 0;
     Quaternion orientPrediction;
 

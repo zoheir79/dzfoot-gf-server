@@ -68,8 +68,8 @@ void Ball::Mirror() {
 
 void Ball::GetPredictionArray(std::vector<Vector3> &target) {
   DO_VALIDATION;
-  target.resize(ballPredictionSize_ms / 10);
-  for (int x = 0; x < ballPredictionSize_ms / 10; x++) {
+  target.resize(ballPredictionSize_ms / int(kTimeStepMs));
+  for (int x = 0; x < ballPredictionSize_ms / int(kTimeStepMs); x++) {
     DO_VALIDATION;
     target[x] = predictions[x];
   }
@@ -163,18 +163,17 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
   ballTouchesNet = false;
 
-  // DZFoot 60Hz: prediction loop keeps 10ms step for array indexing.
-  // Physics calculations inside use kTimeStepS (~16.667ms) for accuracy.
-  for (unsigned int predictTime_ms = 10;
-       predictTime_ms < ballPredictionSize_ms + cachedPredictions * 10;
-       predictTime_ms += 10) {
+  // DZFoot 60Hz: prediction loop uses kTimeStepMs stride for consistency.
+  for (unsigned int predictTime_ms = int(kTimeStepMs);
+       predictTime_ms < ballPredictionSize_ms + cachedPredictions * int(kTimeStepMs);
+       predictTime_ms += int(kTimeStepMs)) {
     DO_VALIDATION;
     // Originally game was recomputing ball's prediction for 300 steps into the
     // future, which was expensive. Now we cache 100 additional steps and if
     // the ball was not touched etc. we just shift predictions by one.
     if (use_cache) {
       DO_VALIDATION;
-      predictions[predictTime_ms / 10] = predictions[predictTime_ms / 10 + 1];
+      predictions[predictTime_ms / int(kTimeStepMs)] = predictions[predictTime_ms / int(kTimeStepMs) + 1];
       continue;
     }
 
@@ -344,7 +343,7 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
     // netting
 
-    if (predictTime_ms <= 10 && netting_enabled) {
+    if (predictTime_ms <= int(kTimeStepMs) && netting_enabled) {
       DO_VALIDATION;
 
       bool ballIsInGoal = match->IsBallInGoal();
@@ -376,7 +375,7 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
         momentumPredict.coords[1] = momentumPredict.coords[1] * netAbsorbInv + power * adaptedPowerFac * (100 * timeStep);// + -momentumPredict.coords[1] * netDist;
 
-        if (predictTime_ms == 10) ballTouchesNet = true;
+        if (predictTime_ms == int(kTimeStepMs)) ballTouchesNet = true;
       }
 
       // rear netting
@@ -398,7 +397,7 @@ BallSpatialInfo Ball::CalculatePrediction() {
                       -signSide(nextPos.coords[0]) * inGoal;
         momentumPredict.coords[0] = momentumPredict.coords[0] * netAbsorbInv + power * powerFac * (100 * timeStep);
 
-        if (predictTime_ms == 10) ballTouchesNet = true;
+        if (predictTime_ms == int(kTimeStepMs)) ballTouchesNet = true;
       }
 
       // top netting
@@ -536,12 +535,12 @@ BallSpatialInfo Ball::CalculatePrediction() {
 
     nextOrientation = rotationPredictTimeStepped * nextOrientation;
 
-    if (predictTime_ms == 10) {
+    if (predictTime_ms == int(kTimeStepMs)) {
       DO_VALIDATION;
       newMomentum = momentumPredict;
       newRotation_ms = rotationPredict_ms;
       orientPrediction = nextOrientation;
-      if (valid_predictions > 0 && predictions[2] == nextPos) {
+      if (valid_predictions > 0 && predictions[int(kTimeStepMs) / int(kTimeStepMs) + 1] == nextPos) {
         DO_VALIDATION;
         valid_predictions--;
         use_cache = true;
@@ -549,7 +548,7 @@ BallSpatialInfo Ball::CalculatePrediction() {
         valid_predictions = cachedPredictions;
       }
     }
-    predictions[predictTime_ms / 10] = nextPos;
+    predictions[predictTime_ms / int(kTimeStepMs)] = nextPos;
 
     firstTime = false;
   }
@@ -565,7 +564,7 @@ Vector3 Ball::GetAveragePosition(unsigned int duration_ms) const {
     DO_VALIDATION;
     averageVec += *iter;
     total++;
-    if (total * 10 > duration_ms) break;
+    if (total * int(kTimeStepMs) > duration_ms) break;
     iter++;
   }
   if (total > 0) averageVec /= total; else averageVec = Predict(0);
@@ -578,7 +577,7 @@ void Ball::Process() {
   momentum = spatialInfo.momentum;
   rotation_ms = spatialInfo.rotation_ms;
 
-  positionBuffer = Predict(10);
+  positionBuffer = Predict(int(kTimeStepMs));
   orientationBuffer = orientPrediction;
 
   ballPosHistory.push_back(positionBuffer);
@@ -595,7 +594,7 @@ void Ball::ResetSituation(const Vector3 &focusPos) {
   DO_VALIDATION;
   momentum = Vector3(0);
   rotation_ms = QUATERNION_IDENTITY;
-  for (unsigned int i = 0; i < ballPredictionSize_ms / 10; i++) {
+  for (unsigned int i = 0; i < ballPredictionSize_ms / int(kTimeStepMs); i++) {
     DO_VALIDATION;
     predictions[i] = Vector3(focusPos + Vector3(0, 0, 0.11));
   }

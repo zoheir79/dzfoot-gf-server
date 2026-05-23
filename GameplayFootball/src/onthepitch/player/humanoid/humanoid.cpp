@@ -597,7 +597,7 @@ void Humanoid::Process() {
           touchVec = touchVec * (1.0f - bumpyRideBias) + currentBallVec * bumpyRideBias;
 
           match->GetBall()->Touch(touchVec);
-          match->GetBall()->SetRotation(0, 0, 0, 0.2f * (1.0f - bumpyRideBias));
+          match->GetBall()->SetRotation(0, 0, 0, 0.2f * kTimeStepFactor * (1.0f - bumpyRideBias));
         }
         team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Accidental);
       }
