@@ -668,8 +668,8 @@ void Humanoid::Process() {
         1.0f;
     // add some linearity
     value = value * 0.1f + 0.9f;
-    spatialState.actionSmuggleMovement = (currentAnim.actionSmuggle / (float)(currentAnim.touchFrame + 1)) * value * 100.0f;
-    currentAnim.actionSmuggleOffset += spatialState.actionSmuggleMovement / 100.0f;
+    spatialState.actionSmuggleMovement = (currentAnim.actionSmuggle / (float)(currentAnim.touchFrame + 1)) * value * kPositionToVelocityScale;
+    currentAnim.actionSmuggleOffset += spatialState.actionSmuggleMovement / kPositionToVelocityScale;
 
   } else {
     spatialState.actionSmuggleMovement = Vector3(0);
@@ -694,8 +694,8 @@ void Humanoid::Process() {
         1.0f;
     // add some linearity
     value = value * 0.1f + 0.9f;
-    spatialState.movementSmuggleMovement = (currentAnim.movementSmuggle / (float)(currentAnim.anim->GetEffectiveFrameCount() + 1)) * value * 100.0f;
-    currentAnim.movementSmuggleOffset += spatialState.movementSmuggleMovement / 100.0f;
+    spatialState.movementSmuggleMovement = (currentAnim.movementSmuggle / (float)(currentAnim.anim->GetEffectiveFrameCount() + 1)) * value * kPositionToVelocityScale;
+    currentAnim.movementSmuggleOffset += spatialState.movementSmuggleMovement / kPositionToVelocityScale;
   } else {
     spatialState.movementSmuggleMovement = Vector3(0);
   }
@@ -1688,7 +1688,7 @@ float Humanoid::GetBodyBallDistanceAdvantage(const Animation *anim, e_FunctionTy
   float highestVelocity = (highestTouchVelocity > highestInOutVelocity) ? highestTouchVelocity : highestInOutVelocity;
 
   float velocityChange = outgoingVelocity - incomingVelocity;
-  float velocityChange_mps = velocityChange / (anim->GetFrameCount() * 0.01f);
+  float velocityChange_mps = velocityChange / (anim->GetFrameCount() * kTimeStepS);
 
 
   float bodyAnimBallBonus = 1.0f - curve(NormalizedClamp(((bodyPos + FFO.GetNormalized(0) * 0.1f) - animBallPos2D).GetLength(), 0.0f, 0.7f), 0.7f); // less FFO feels better
@@ -1880,7 +1880,7 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
       // out of bounds?
       if (match->GetBallRetainer() != player) {
         DO_VALIDATION;
-        Vector3 absBallPos = match->GetBall()->Predict(animTouchFrame * 10);
+        Vector3 absBallPos = match->GetBall()->Predict(animTouchFrame * kTimeStepMs);
         if (fabs(absBallPos.coords[0]) > pitchHalfW + lineHalfW + 0.11f ||
             fabs(absBallPos.coords[1]) > pitchHalfH + lineHalfW + 0.11f) {
           DO_VALIDATION;
@@ -1894,8 +1894,8 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
 
       Vector3 ballPos, ballMovement;
       auto mentalImage = match->GetMentalImage(mentalImageTime);
-      ballPos = mentalImage->GetBallPrediction(animTouchFrame * 10);
-      ballMovement = (mentalImage->GetBallPrediction(animTouchFrame * 10 + 10) - mentalImage->GetBallPrediction(animTouchFrame * 10)) * 100.0f;
+      ballPos = mentalImage->GetBallPrediction(animTouchFrame * kTimeStepMs);
+      ballMovement = (mentalImage->GetBallPrediction(animTouchFrame * kTimeStepMs + kTimeStepMs) - mentalImage->GetBallPrediction(animTouchFrame * kTimeStepMs)) * kPositionToVelocityScale;
       ballPos = (ballPos - spatialState.position).GetRotated2D(-spatialState.angle);
       ballMovement = ballMovement.GetRotated2D(-spatialState.angle);
 
@@ -2026,7 +2026,7 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
           FFO.Rotate2D(FixAngle(touchMovement.GetNormalized(Vector3(0, -1, 0)).GetAngle2D()));
         }
         // just touched ball
-        float lastTouchBias = curve(player->GetLastTouchBias(600, match->GetActualTime_ms() + animTouchFrame * 10), 1.0f);
+        float lastTouchBias = curve(player->GetLastTouchBias(600, match->GetActualTime_ms() + animTouchFrame * kTimeStepMs), 1.0f);
         if (lastTouchBias > 0.0f) {
           DO_VALIDATION;
           float factor = 1.0f - lastTouchBias * 0.97f * (1.0f - player->GetStat(technical_ballcontrol) * 0.1f);
@@ -2059,7 +2059,7 @@ signed int Humanoid::GetBestCheatableAnimID(const DataSet &sortedDataSet, bool u
   if (found) {
     DO_VALIDATION;
     auto currentMentalImage = match->GetMentalImage(mentalImageTime);
-    touchPos_ret = currentMentalImage->GetBallPrediction(animTouchFrame_ret * 10);
+    touchPos_ret = currentMentalImage->GetBallPrediction(animTouchFrame_ret * kTimeStepMs);
 
     fullActionSmuggle_ret = bestActionSmuggleVec2D.GetRotated2D(spatialState.angle);
     actionSmuggle_ret = fullActionSmuggle_ret;
@@ -2169,7 +2169,7 @@ Vector3 Humanoid::CalculateMovementSmuggle(const Vector3 &desiredDirection,
     DO_VALIDATION;
     timeToBall_ms = CastPlayer()->GetDesiredTimeToBall_ms();
   }
-  unsigned int animTime_ms = currentAnim.anim->GetFrameCount() * 10;
+  unsigned int animTime_ms = currentAnim.anim->GetFrameCount() * kTimeStepMs;
   unsigned int futureTime_ms = std::max(animTime_ms + defaultTouchOffset_ms, timeToBall_ms);
 
 

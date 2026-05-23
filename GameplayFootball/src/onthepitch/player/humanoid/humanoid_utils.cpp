@@ -66,7 +66,7 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
     // simple version for debugging purposes
     unsigned int adaptedFrameNum = std::min(std::max(frameNum, (unsigned int)1),
     (unsigned int)positions.size() - 1); return (positions.at(adaptedFrameNum) -
-    positions.at(adaptedFrameNum - 1)).Get2D() * 100.0f * kTimeStepFactor;
+    positions.at(adaptedFrameNum - 1)).Get2D() * kPositionToVelocityScale;
   */
 
   assert(frameNum < positions.size());
@@ -74,12 +74,12 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
   // special case: want the exit movement to be unsmoothed, for we don't want the wrong quantized velocity and such
   if (frameNum == positions.size() - 1) {
     DO_VALIDATION;
-    return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)).Get2D() * 100.0f * kTimeStepFactor;
+    return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)).Get2D() * kPositionToVelocityScale;
   }
   // special case: if we want the movement at frame 0, we can't get -1 to 0, we need to get 0 to 1 instead
   if (frameNum == 0) {
     DO_VALIDATION;
-    return (positions.at(1) - positions.at(0)).Get2D() * 100.0f * kTimeStepFactor;
+    return (positions.at(1) - positions.at(0)).Get2D() * kPositionToVelocityScale;
   }
 
   Vector3 totalMovement;
@@ -89,7 +89,7 @@ Vector3 CalculateMovementAtFrame(const std::vector<Vector3> &positions,
     DO_VALIDATION;
     if (frame > 0 && frame < (signed int)positions.size()) {
       DO_VALIDATION;  // was: frame > 1 (i think that was a bug)
-      totalMovement += (positions.at(frame) - positions.at(frame - 1)).Get2D() * 100.0f * kTimeStepFactor;
+      totalMovement += (positions.at(frame) - positions.at(frame - 1)).Get2D() * kPositionToVelocityScale;
       count++;
     }
   }
@@ -306,7 +306,7 @@ Vector3 GetBallControlVector(Ball *ball, Player *player,
   Vector3 plannedBallPos = physicsPlannedBallPos * physicsBias + desiredPlannedBallPos * (1.0f - physicsBias);
   Vector3 toPlannedBall = plannedBallPos - ball->Predict(0).Get2D();
 
-  float timeToGo = ((currentAnim.anim->GetEffectiveFrameCount() - frameNum) * 10) * 0.001f;
+  float timeToGo = ((currentAnim.anim->GetEffectiveFrameCount() - frameNum) * kTimeStepMs) * 0.001f;
   timeToGo += physicsDelayTime * physicsBias + desiredDelayTime * (1.0f - physicsBias);
   timeToGo += defaultTouchOffset_ms * 0.001f;//0.08f; // time into next anim where we want to hit the ball
 

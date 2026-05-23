@@ -20,6 +20,10 @@ constexpr float kTimeStepS = kTimeStepMs / 1000.0f;
 // Example: old drag = 0.015f  →  new drag = 0.015f * kTimeStepFactor
 constexpr float kTimeStepFactor = kTimeStepMs / 10.0f;
 
+// Scale factor to convert position-delta-per-frame to velocity-per-second.
+// Old: 1 / 0.010s = 100.  New: 1 / kTimeStepS = 60.
+constexpr float kPositionToVelocityScale = 1.0f / kTimeStepS;
+
 // Old timestep values kept for reference during migration.
 // Remove once all coefficients have been migrated.
 static_assert(kTimeStepMs > 15.0f && kTimeStepMs < 17.0f,

@@ -903,7 +903,7 @@ void HumanoidBase::OffsetPosition(const Vector3 &offset) {
   nextStartPos += offset;
   startPos += offset;
   spatialState.position += offset;
-  spatialState.positionOffsetMovement += offset * 100.0f * kTimeStepFactor;
+  spatialState.positionOffsetMovement += offset * kPositionToVelocityScale;
   decayingPositionOffset += offset;
   if (decayingPositionOffset.GetLength() > 0.1f) decayingPositionOffset = decayingPositionOffset.GetNormalized() * 0.1f;
   currentAnim.positionOffset += offset;
@@ -965,7 +965,7 @@ void HumanoidBase::ResetSituation(const Vector3 &focusPos) {
 }
 
 bool HumanoidBase::_HighOrBouncyBall() const {
-  float ballHeight1 = match->GetBall()->Predict(10).coords[2];
+  float ballHeight1 = match->GetBall()->Predict(kTimeStepMs).coords[2];
   float ballHeight2 = match->GetBall()->Predict(defaultTouchOffset_ms).coords[2];
   float ballBounce = fabs(match->GetBall()->GetMovement().coords[2]);
   bool highBall = false;
@@ -1314,7 +1314,7 @@ void HumanoidBase::CalculatePredictedSituation(Vector3 &predictedPos,
 
 Vector3 HumanoidBase::CalculateOutgoingMovement(const std::vector<Vector3> &positions) const {
   if (positions.size() < 2) return 0;
-  return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)) * 100.0f;
+  return (positions.at(positions.size() - 1) - positions.at(positions.size() - 2)) * kPositionToVelocityScale;
 }
 
 void HumanoidBase::CalculateSpatialState() {
@@ -1340,7 +1340,7 @@ void HumanoidBase::CalculateSpatialState() {
   assert(currentAnim.movementSmuggleOffset.coords[2] == 0.0f);
   assert(position.coords[2] == 0.0f);
 
-  spatialState.actualMovement = (position - previousPosition2D) * 100.0f;
+  spatialState.actualMovement = (position - previousPosition2D) * kPositionToVelocityScale;
   const float positionOffsetMovementIgnoreFactor = 0.5f;
   spatialState.physicsMovement = spatialState.actualMovement - (spatialState.actionSmuggleMovement) - (spatialState.movementSmuggleMovement) - (spatialState.positionOffsetMovement * positionOffsetMovementIgnoreFactor);
   spatialState.animMovement = spatialState.physicsMovement;

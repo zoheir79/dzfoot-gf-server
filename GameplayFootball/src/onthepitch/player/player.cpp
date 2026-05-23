@@ -247,7 +247,7 @@ void Player::UpdatePossessionStats() {
 
   if (TouchAnim() && TouchPending()) {
     DO_VALIDATION;
-    unsigned int animTimeToBall_ms = (CastHumanoid()->GetTouchFrame() - GetCurrentFrame()) * 10;
+    unsigned int animTimeToBall_ms = (CastHumanoid()->GetTouchFrame() - GetCurrentFrame()) * kTimeStepMs;
     timeNeededToGetToBall_ms = std::min(timeNeededToGetToBall_ms, animTimeToBall_ms);
     timeNeededToGetToBall_optimistic_ms = timeNeededToGetToBall_ms;
   }

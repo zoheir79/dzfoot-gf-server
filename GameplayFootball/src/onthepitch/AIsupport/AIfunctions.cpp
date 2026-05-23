@@ -620,14 +620,14 @@ unsigned int AI_GetToBallMovement(Match *match, const MentalImage *mentalImage,
 
   float ffoLength = GetFrontOfFootOffsetRel(desiredVelocityFloat * 0.2f + player->GetFloatVelocity() * 0.8f, 0, 0).GetLength();
 
-  Vector3 ballMovementRough = (mentalImage->GetBallPrediction(player->GetTimeNeededToGetToBall_ms() + 10) - mentalImage->GetBallPrediction(player->GetTimeNeededToGetToBall_ms())).Get2D() * 100.0f;
+  Vector3 ballMovementRough = (mentalImage->GetBallPrediction(player->GetTimeNeededToGetToBall_ms() + kTimeStepMs) - mentalImage->GetBallPrediction(player->GetTimeNeededToGetToBall_ms())).Get2D() * kPositionToVelocityScale;
   float desiredBallDot = ballMovementRough.GetNormalized(0).GetDotProduct(adaptedDesiredDirection);
   Vector3 ballDirectionRough = ballMovementRough.GetNormalized(adaptedDesiredDirection);
 
   unsigned int timeStep = 1;
 
   for (unsigned int time_ms = startTime_ms; time_ms < ballPredictionSize_ms;
-       time_ms += 10 * timeStep) {
+       time_ms += kTimeStepMs * timeStep) {
     DO_VALIDATION;
 
     bool forced = false;
@@ -857,7 +857,7 @@ bool AI_HasPossession(Ball *ball, Player *player) {
   if ((ball->Predict(0).Get2D() - center).GetLength() > radius) distanceOK = false;
 
   bool movementOK = true;
-  Vector3 ballMovement3D = (ball->Predict(10) - ball->Predict(0)) * 100.0f;
+  Vector3 ballMovement3D = (ball->Predict(kTimeStepMs) - ball->Predict(0)) * kPositionToVelocityScale;
   if ((ballMovement3D - playerMovement).GetLength() > 6.0f) movementOK = false;
 
   if (distanceOK && movementOK) return true; else return false;
