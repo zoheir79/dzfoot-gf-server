@@ -67,7 +67,13 @@ LiveKitBridge::~LiveKitBridge() {
 }
 
 bool LiveKitBridge::connect(const std::string& url, const std::string& token, const std::string& roomId) {
-    url_ = url;
+    std::string wsUrl = url;
+    if (wsUrl.compare(0, 8, "https://") == 0) {
+        wsUrl.replace(0, 5, "wss");
+    } else if (wsUrl.compare(0, 7, "http://") == 0) {
+        wsUrl.replace(0, 4, "ws");
+    }
+    url_ = wsUrl;
     token_ = token;
     roomId_ = roomId;
     identity_ = "gf_server_" + roomId;
