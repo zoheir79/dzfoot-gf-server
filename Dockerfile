@@ -12,8 +12,6 @@ RUN apt-get update && apt-get install -y \
     cmake ca-certificates curl wget xz-utils make \
     && rm -rf /var/lib/apt/lists/*
 
-# CMake from apt is sufficient (3.22) for our project; libdatachannel doesn't need 3.31
-
 WORKDIR /build
 ARG CACHEBUST=0
 COPY . .

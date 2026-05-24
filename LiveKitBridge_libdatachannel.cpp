@@ -2,6 +2,8 @@
 #include <rtc/rtc.hpp>
 #include <nlohmann/json.hpp>
 #include <iostream>
+#include <cstdio>
+#include <algorithm>
 
 LiveKitBridge::LiveKitBridge() {
     rtc::InitLogger(rtc::LogLevel::Warning);
@@ -44,10 +46,16 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
                 std::string raw = std::get<std::string>(msg);
                 std::cout << "[LiveKitBridge] WS msg: " << raw.substr(0, 200) << std::endl;
                 handleSignaling(raw);
-            } else if (std::holds_alternative<std::vector<uint8_t>>(msg)) {
-                auto& data = std::get<std::vector<uint8_t>>(msg);
+            } else if (std::holds_alternative<rtc::binary>(msg)) {
+                auto& data = std::get<rtc::binary>(msg);
                 std::cout << "[LiveKitBridge] WS binary msg: " << data.size() << " bytes" << std::endl;
-                std::string raw(data.begin(), data.end());
+                // Hex dump first 32 bytes
+                std::cout << "[LiveKitBridge]   hex: ";
+                for (size_t i = 0; i < std::min(data.size(), size_t(32)); i++) {
+                    printf("%02x ", static_cast<unsigned char>(data[i]));
+                }
+                std::cout << std::endl;
+                std::string raw(reinterpret_cast<const char*>(data.data()), data.size());
                 handleSignaling(raw);
             }
         });
@@ -74,61 +82,111 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
 
 void LiveKitBridge::handleSignaling(const std::string& msg) {
     try {
-        auto j = nlohmann::json::parse(msg);
-
-        if (j.contains("offer")) {
-            std::string sdp = j["offer"]["sdp"];
-            rtc::Configuration cfg;
-            cfg.iceServers.emplace_back("stun:stun.l.google.com:19302");
-
-            pc_ = std::make_shared<rtc::PeerConnection>(cfg);
-
-            pc_->onStateChange([](rtc::PeerConnection::State s) {
-                std::cout << "[LiveKitBridge] PC state: " << static_cast<int>(s) << std::endl;
-            });
-
-            pc_->onGatheringStateChange([this](rtc::PeerConnection::GatheringState s) {
-                if (s == rtc::PeerConnection::GatheringState::Complete) {
-                    sendAnswer();
-                }
-            });
-
-            pc_->onDataChannel([this](std::shared_ptr<rtc::DataChannel> dc) {
-                setupDataChannel(dc, dc->label());
-            });
-
-            // Set remote description (offer from LiveKit server)
-            pc_->setRemoteDescription(rtc::Description(sdp, "offer"));
-
-            // Create data channels: gs = unreliable (game state, freshness > reliability)
-            rtc::DataChannelInit gsInit;
-            gsInit.reliability.type = rtc::Reliability::Type::Rexmit;
-            gsInit.reliability.rexmit = 0;  // 0 retransmits = unreliable
-            dcGs_ = pc_->createDataChannel("gs", gsInit);
-            setupDataChannel(dcGs_, "gs");
-
-            // ev = reliable (events must arrive)
-            rtc::DataChannelInit evInit;
-            evInit.reliability.type = rtc::Reliability::Type::Reliable;
-            dcEv_ = pc_->createDataChannel("ev", evInit);
-            setupDataChannel(dcEv_, "ev");
-
-            // in = reliable (inputs must not be dropped)
-            rtc::DataChannelInit inInit;
-            inInit.reliability.type = rtc::Reliability::Type::Reliable;
-            dcIn_ = pc_->createDataChannel("in", inInit);
-            setupDataChannel(dcIn_, "in");
-
-        } else if (j.contains("trickle") && pc_) {
-            std::string candidate = j["trickle"]["candidate"];
-            std::string sdpMid = j.value("/trickle/sdpMid"_json_pointer, "");
-            if (!candidate.empty()) {
-                pc_->addRemoteCandidate(rtc::Candidate(candidate, sdpMid));
-            }
+        // Try JSON first (text messages)
+        if (!msg.empty() && msg[0] == '{') {
+            auto j = nlohmann::json::parse(msg);
+            processJsonSignal(j);
+            return;
         }
+
+        // Binary protobuf message: search for SDP offer (starts with "v=0\r\n")
+        size_t sdpPos = msg.find("v=0\r\n");
+        if (sdpPos != std::string::npos) {
+            std::string sdp = msg.substr(sdpPos);
+            // Trim trailing protobuf garbage
+            size_t end = sdp.find_last_of("\r\n");
+            if (end != std::string::npos && end + 2 < sdp.size()) {
+                // Check if there's more after the SDP ends
+                size_t sdpEnd = sdp.find("\r\n\r\n");
+                if (sdpEnd == std::string::npos) sdpEnd = sdp.find("\n\n");
+                if (sdpEnd != std::string::npos) {
+                    sdp = sdp.substr(0, sdpEnd + 2);
+                }
+            }
+            std::cout << "[LiveKitBridge] Extracted SDP offer (" << sdp.size() << " bytes)" << std::endl;
+            processOffer(sdp);
+            return;
+        }
+
+        // Search for trickle/ICE candidate
+        size_t icePos = msg.find("candidate:");
+        if (icePos != std::string::npos) {
+            // Extract candidate line
+            size_t lineEnd = msg.find("\r\n", icePos);
+            if (lineEnd == std::string::npos) lineEnd = msg.find("\n", icePos);
+            std::string candidate;
+            if (lineEnd != std::string::npos) {
+                candidate = msg.substr(icePos, lineEnd - icePos);
+            } else {
+                candidate = msg.substr(icePos);
+            }
+            std::cout << "[LiveKitBridge] ICE candidate: " << candidate.substr(0, 80) << std::endl;
+            if (pc_) {
+                pc_->addRemoteCandidate(rtc::Candidate(candidate, ""));
+            }
+            return;
+        }
+
+        std::cout << "[LiveKitBridge] Unhandled binary msg (" << msg.size() << " bytes)" << std::endl;
     } catch (const std::exception& e) {
         std::cerr << "[LiveKitBridge] Signal parse error: " << e.what() << std::endl;
     }
+}
+
+void LiveKitBridge::processJsonSignal(const nlohmann::json& j) {
+    if (j.contains("offer")) {
+        std::string sdp = j["offer"]["sdp"];
+        processOffer(sdp);
+    } else if (j.contains("trickle") && pc_) {
+        std::string candidate = j["trickle"]["candidate"];
+        std::string sdpMid = j.value("/trickle/sdpMid"_json_pointer, "");
+        if (!candidate.empty()) {
+            pc_->addRemoteCandidate(rtc::Candidate(candidate, sdpMid));
+        }
+    }
+}
+
+void LiveKitBridge::processOffer(const std::string& sdp) {
+    rtc::Configuration cfg;
+    cfg.iceServers.emplace_back("stun:stun.l.google.com:19302");
+
+    pc_ = std::make_shared<rtc::PeerConnection>(cfg);
+
+    pc_->onStateChange([](rtc::PeerConnection::State s) {
+        std::cout << "[LiveKitBridge] PC state: " << static_cast<int>(s) << std::endl;
+    });
+
+    pc_->onGatheringStateChange([this](rtc::PeerConnection::GatheringState s) {
+        if (s == rtc::PeerConnection::GatheringState::Complete) {
+            sendAnswer();
+        }
+    });
+
+    pc_->onDataChannel([this](std::shared_ptr<rtc::DataChannel> dc) {
+        setupDataChannel(dc, dc->label());
+    });
+
+    // Set remote description (offer from LiveKit server)
+    pc_->setRemoteDescription(rtc::Description(sdp, "offer"));
+
+    // Create data channels: gs = unreliable (game state, freshness > reliability)
+    rtc::DataChannelInit gsInit;
+    gsInit.reliability.type = rtc::Reliability::Type::Rexmit;
+    gsInit.reliability.rexmit = 0;
+    dcGs_ = pc_->createDataChannel("gs", gsInit);
+    setupDataChannel(dcGs_, "gs");
+
+    // ev = reliable (events must arrive)
+    rtc::DataChannelInit evInit;
+    evInit.reliability.type = rtc::Reliability::Type::Reliable;
+    dcEv_ = pc_->createDataChannel("ev", evInit);
+    setupDataChannel(dcEv_, "ev");
+
+    // in = reliable (inputs must not be dropped)
+    rtc::DataChannelInit inInit;
+    inInit.reliability.type = rtc::Reliability::Type::Reliable;
+    dcIn_ = pc_->createDataChannel("in", inInit);
+    setupDataChannel(dcIn_, "in");
 }
 
 void LiveKitBridge::sendAnswer() {

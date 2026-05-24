@@ -82,6 +82,8 @@ private:
     std::shared_ptr<rtc::DataChannel> dcIn_;
 
     void handleSignaling(const std::string& msg);
+    void processJsonSignal(const class nlohmann::json& j);
+    void processOffer(const std::string& sdp);
     void sendAnswer();
     void setupDataChannel(std::shared_ptr<rtc::DataChannel> dc, const std::string& label);
 #endif
