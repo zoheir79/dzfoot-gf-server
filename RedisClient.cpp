@@ -2,10 +2,12 @@
 #include <hiredis/hiredis.h>
 #include <iostream>
 #include <cstring>
+#include <poll.h>
 
 RedisClient::RedisClient() = default;
 
 RedisClient::~RedisClient() {
+    unsubscribe("");
     disconnect();
 }
 
@@ -101,6 +103,19 @@ bool RedisClient::publish(const std::string& channel, const std::string& message
     return ok;
 }
 
+bool RedisClient::publishBinary(const std::string& channel, const uint8_t* data, size_t len) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!ensureConnected()) return false;
+    redisReply* r = (redisReply*)redisCommand(ctx_, "PUBLISH %s %b", channel.c_str(), data, len);
+    if (!r) {
+        disconnect();
+        return false;
+    }
+    bool ok = (r->type != REDIS_REPLY_ERROR);
+    freeReplyObject(r);
+    return ok;
+}
+
 bool RedisClient::hset(const std::string& key, const std::string& field, const std::string& value) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!ensureConnected()) return false;
@@ -112,4 +127,95 @@ bool RedisClient::hset(const std::string& key, const std::string& field, const s
     bool ok = (r->type != REDIS_REPLY_ERROR);
     freeReplyObject(r);
     return ok;
+}
+
+bool RedisClient::ensureSubscribed(const std::string& channel) {
+    if (subCtx_ && !subCtx_->err && subscribedChannel_ == channel) return true;
+    if (subCtx_) {
+        redisFree(subCtx_);
+        subCtx_ = nullptr;
+    }
+    subscribedChannel_.clear();
+    if (host_.empty() || channel.empty()) return false;
+
+    struct timeval tv{1, 0};
+    subCtx_ = redisConnectWithTimeout(host_.c_str(), port_, tv);
+    if (!subCtx_ || subCtx_->err) {
+        if (subCtx_) {
+            redisFree(subCtx_);
+            subCtx_ = nullptr;
+        }
+        return false;
+    }
+    if (!password_.empty()) {
+        redisReply* r = (redisReply*)redisCommand(subCtx_, "AUTH %s", password_.c_str());
+        if (!r || r->type == REDIS_REPLY_ERROR) {
+            if (r) freeReplyObject(r);
+            redisFree(subCtx_);
+            subCtx_ = nullptr;
+            return false;
+        }
+        freeReplyObject(r);
+    }
+    redisReply* r = (redisReply*)redisCommand(subCtx_, "SUBSCRIBE %s", channel.c_str());
+    if (!r || r->type == REDIS_REPLY_ERROR) {
+        if (r) freeReplyObject(r);
+        redisFree(subCtx_);
+        subCtx_ = nullptr;
+        return false;
+    }
+    freeReplyObject(r);
+    subscribedChannel_ = channel;
+    return true;
+}
+
+std::vector<uint8_t> RedisClient::subscribeNext(const std::string& channel, int timeoutMs) {
+    int fd = -1;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!ensureSubscribed(channel)) return {};
+        fd = subCtx_->fd;
+    }
+    // Release mutex during poll() so main thread can publish
+
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    int ret = poll(&pfd, 1, timeoutMs);
+    if (ret <= 0) return {}; // timeout or error
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    // Re-check subscription still valid
+    if (!subCtx_ || subCtx_->err || subscribedChannel_ != channel) return {};
+
+    redisReply* r = nullptr;
+    if (redisGetReply(subCtx_, (void**)&r) != REDIS_OK || !r) {
+        redisFree(subCtx_);
+        subCtx_ = nullptr;
+        subscribedChannel_.clear();
+        return {};
+    }
+
+    std::vector<uint8_t> result;
+    if (r->type == REDIS_REPLY_ARRAY && r->elements >= 3) {
+        redisReply* dataReply = r->element[2];
+        if (dataReply->type == REDIS_REPLY_STRING) {
+            result.assign(dataReply->str, dataReply->str + dataReply->len);
+        }
+    }
+    freeReplyObject(r);
+    return result;
+}
+
+void RedisClient::unsubscribe(const std::string& channel) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (subCtx_ && !subCtx_->err && !subscribedChannel_.empty()) {
+        redisReply* r = (redisReply*)redisCommand(subCtx_, "UNSUBSCRIBE %s", subscribedChannel_.c_str());
+        if (r) freeReplyObject(r);
+    }
+    if (subCtx_) {
+        redisFree(subCtx_);
+        subCtx_ = nullptr;
+    }
+    subscribedChannel_.clear();
 }

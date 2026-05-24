@@ -39,11 +39,11 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 COPY --from=builder /build/build/gf_server /usr/local/bin/gf_server
 COPY --from=builder /build/build/GF_build/libgame.so /usr/local/lib/
-COPY --from=builder /build/build/_deps/libdatachannel-build/libdatachannel.so* /usr/local/lib/
 COPY --from=builder /build/GameplayFootball/data /app/data
 RUN ldconfig
 
-# Note: no EXPOSE needed — WebRTC data channels use ephemeral UDP ports.
-# LiveKit/libdatachannel handles NAT traversal (ICE/STUN).
+# GF server communicates via Redis only.
+# Game states are published to Redis, backend session service forwards to LiveKit.
+# Player inputs are received via Redis subscription.
 
 ENTRYPOINT ["gf_server"]

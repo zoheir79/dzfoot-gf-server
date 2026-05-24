@@ -4,14 +4,14 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <algorithm>
 #include <unistd.h>
 #include "GameServer.h"
-#include "LiveKitBridge.h"
+#include "RedisClient.h"
 
 static std::atomic<bool> gRunning{true};
 
 void signalHandler(int sig) {
-    // async-signal-safe: write() instead of std::cout
     const char msg[] = "Received signal, shutting down...\n";
     (void)sig;
     (void)::write(STDOUT_FILENO, msg, sizeof(msg) - 1);
@@ -27,12 +27,11 @@ struct Args {
     std::string playerB;
     int duration = 600;
     int broadcastRateHz = 20;
-    std::string livekitUrl;
-    std::string livekitToken;
     std::string statsUrl;
     std::string redisUrl;
-    uint8_t gameMode = 1; // 0=1v1, 1=vs_AI
-    std::string configFile; // external JSON match config
+    uint8_t gameMode = 1;
+    std::string configFile;
+    std::string configJson;
 };
 
 static std::string getenvOr(const char* name, const std::string& fallback) {
@@ -42,7 +41,6 @@ static std::string getenvOr(const char* name, const std::string& fallback) {
 
 Args parseArgs(int argc, char* argv[]) {
     Args cfg;
-    // Environment-variable defaults (useful for Docker / k8s standalone deployment)
     cfg.roomId         = getenvOr("ROOM_ID", "");
     cfg.teamA          = getenvOr("TEAM_A", "");
     cfg.teamB          = getenvOr("TEAM_B", "");
@@ -53,15 +51,15 @@ Args parseArgs(int argc, char* argv[]) {
     try { cfg.broadcastRateHz = std::stoi(getenvOr("BROADCAST_HZ", "20")); } catch (...) { cfg.broadcastRateHz = 20; }
     try {
         std::string modeStr = getenvOr("MODE", "vs_ai");
-        cfg.gameMode = (modeStr == "1v1" || modeStr == "1") ? 0 : 1;
+        if (modeStr == "1v1" || modeStr == "1") cfg.gameMode = 0;
+        else if (modeStr == "ai_vs_ai" || modeStr == "2") cfg.gameMode = 2;
+        else cfg.gameMode = 1; // vs_ai
     } catch (...) { cfg.gameMode = 1; }
-    cfg.livekitUrl     = getenvOr("LIVEKIT_URL", "");
-    cfg.livekitToken   = getenvOr("LIVEKIT_TOKEN", "");
     cfg.statsUrl       = getenvOr("STATS_URL", "");
     cfg.redisUrl       = getenvOr("REDIS_URL", "");
     cfg.configFile     = getenvOr("CONFIG_FILE", "");
+    cfg.configJson     = getenvOr("CONFIG_JSON", "");
 
-    // CLI arguments override environment variables
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg.find("--room-id=") == 0) cfg.roomId = arg.substr(10);
@@ -76,29 +74,25 @@ Args parseArgs(int argc, char* argv[]) {
         else if (arg.find("--broadcast-hz=") == 0) {
             try { cfg.broadcastRateHz = std::stoi(arg.substr(15)); } catch (...) {}
         }
-        else if (arg.find("--livekit-url=") == 0) cfg.livekitUrl = arg.substr(14);
-        else if (arg.find("--livekit-token=") == 0) cfg.livekitToken = arg.substr(16);
         else if (arg.find("--stats-url=") == 0) cfg.statsUrl = arg.substr(12);
         else if (arg.find("--redis-url=") == 0) cfg.redisUrl = arg.substr(12);
         else if (arg.find("--mode=") == 0) {
             std::string m = arg.substr(7);
-            cfg.gameMode = (m == "1v1" || m == "1") ? 0 : 1;
+            if (m == "1v1" || m == "1") cfg.gameMode = 0;
+            else if (m == "ai_vs_ai" || m == "2") cfg.gameMode = 2;
+            else cfg.gameMode = 1;
         }
         else if (arg.find("--config-file=") == 0) cfg.configFile = arg.substr(14);
+        else if (arg.find("--config-json=") == 0) cfg.configJson = arg.substr(14);
     }
     return cfg;
 }
 
-// Parse raw input packet into PlayerInput.
-// Layout: dirX(4), dirZ(4), kick(4), pass(4), highPass(4), shot(4), sliding(4),
-//         dribble(4), sprint(4), switchPlayer(4), playerIdx(1), team(1), pad(2),
-//         clientTick(4), clientTimeUs(8)
-// Total 56 bytes
 static GameServer::PlayerInput parseInputPacket(const uint8_t* data, size_t len) {
     GameServer::PlayerInput inp{};
-    if (len < 48) return inp; // need up to clientTick at offset 44 (4 bytes)
+    if (len < 48) return inp;
     float vals[10];
-    std::memcpy(vals, data, 40); // 10 floats = 40 bytes
+    std::memcpy(vals, data, 40);
     inp.dirX = vals[0];
     inp.dirZ = vals[1];
     inp.kick = vals[2] > 0.5f;
@@ -124,19 +118,21 @@ int main(int argc, char* argv[]) {
 
     Args args = parseArgs(argc, argv);
     if (args.roomId.empty()) {
-        std::cerr << "Usage: gf_server --room-id=ID [--mode=1v1|vs_ai] [--livekit-url=... --livekit-token=...] [--broadcast-hz=20]" << std::endl;
+        std::cerr << "Usage: gf_server --room-id=ID [--mode=1v1|vs_ai|ai_vs_ai] [--redis-url=...] [--broadcast-hz=20]" << std::endl;
         return 1;
     }
 
-    // 1. Connect to LiveKit as server bot (stub until C++ SDK integrated)
-    LiveKitBridge lkBridge;
-    if (!args.livekitUrl.empty() && !args.livekitToken.empty()) {
-        if (!lkBridge.connect(args.livekitUrl, args.livekitToken, args.roomId)) {
-            std::cerr << "[GF Server] LiveKit connect failed, running without network" << std::endl;
+    // 1. Connect to Redis (required for game state broadcast + input receive)
+    RedisClient redis;
+    if (!args.redisUrl.empty()) {
+        if (!redis.configure(args.redisUrl)) {
+            std::cerr << "[GF Server] Redis configure failed for " << args.redisUrl << std::endl;
+        } else {
+            std::cout << "[GF Server] Redis connected" << std::endl;
         }
     }
 
-    // 2. Start GameServer (runs in this thread)
+    // 2. Start GameServer
     GameServer::Config gscfg;
     gscfg.roomId = args.roomId;
     gscfg.teamA = args.teamA;
@@ -148,26 +144,39 @@ int main(int argc, char* argv[]) {
     gscfg.broadcastRateHz = args.broadcastRateHz;
     gscfg.statsUrl = args.statsUrl;
     gscfg.redisUrl = args.redisUrl;
-    gscfg.livekitBridge = &lkBridge;
+    gscfg.redis = &redis;
     gscfg.gameMode = args.gameMode;
     gscfg.shutdownFlag = &gRunning;
     gscfg.matchConfigPath = args.configFile;
+    gscfg.matchConfigJson = args.configJson;
 
     GameServer::Server server(gscfg);
 
-    // Wire LiveKit input callback to GameServer (topic "in")
-    lkBridge.setOnDataReceived([&server](const std::string& topic, const uint8_t* data, size_t len) {
-        if (topic != "in") return;
-        auto input = parseInputPacket(data, len);
-        server.receiveInput(input);
+    // 3. Start input listener thread (Redis subscription for player inputs)
+    std::string roomId = args.roomId;
+    std::thread inputThread([&]() {
+        while (gRunning) {
+            auto raw = redis.subscribeNext("gf.input", 100);
+            if (raw.size() >= 37) {
+                // First 36 bytes: room_id prefix
+                std::string msgRoomId(raw.begin(), raw.begin() + 36);
+                msgRoomId.erase(std::find(msgRoomId.begin(), msgRoomId.end(), '\0'), msgRoomId.end());
+                if (msgRoomId == roomId) {
+                    auto input = parseInputPacket(raw.data() + 36, raw.size() - 36);
+                    server.receiveInput(input);
+                }
+            }
+        }
     });
 
     server.run();
 
-    // 3. Post match result to Stats Service
+    gRunning = false;
+    if (inputThread.joinable()) inputThread.join();
+
+    // 4. Post match result to Stats Service
     server.postMatchResult(args.statsUrl);
 
-    lkBridge.disconnect();
     std::cout << "GF Server exited cleanly" << std::endl;
     return 0;
 }

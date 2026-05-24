@@ -1,9 +1,7 @@
 #include "LiveKitBridge.h"
 #include <rtc/rtc.hpp>
-#include <nlohmann/json.hpp>
+#include "livekit_rtc.pb.h"
 #include <iostream>
-#include <cstdio>
-#include <algorithm>
 
 LiveKitBridge::LiveKitBridge() {
     rtc::InitLogger(rtc::LogLevel::Warning);
@@ -26,37 +24,21 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
     identity_ = "gf_server_" + roomId;
 
     try {
-        rtc::WebSocketConfiguration wsConfig;
-        wsConfig.protocols = {"livekit-protocol"};
-        ws_ = std::make_unique<rtc::WebSocket>(wsConfig);
+        ws_ = std::make_unique<rtc::WebSocket>();
 
         ws_->onOpen([this]() {
-            std::cout << "[LiveKitBridge] WS open, joining room " << roomId_ << std::endl;
-            nlohmann::json joinMsg = {
-                {"join", {
-                    {"room", roomId_},
-                    {"identity", identity_}
-                }}
-            };
-            ws_->send(joinMsg.dump());
+            std::cout << "[LiveKitBridge] WS open, connection established for room " << roomId_ << std::endl;
         });
 
         ws_->onMessage([this](rtc::message_variant msg) {
-            if (std::holds_alternative<std::string>(msg)) {
+            if (std::holds_alternative<rtc::binary>(msg)) {
+                auto bin = std::get<rtc::binary>(msg);
+                handleSignaling(reinterpret_cast<const uint8_t*>(bin.data()), bin.size());
+            } else if (std::holds_alternative<std::string>(msg)) {
                 std::string raw = std::get<std::string>(msg);
-                std::cout << "[LiveKitBridge] WS msg: " << raw.substr(0, 200) << std::endl;
-                handleSignaling(raw);
-            } else if (std::holds_alternative<rtc::binary>(msg)) {
-                auto& data = std::get<rtc::binary>(msg);
-                std::cout << "[LiveKitBridge] WS binary msg: " << data.size() << " bytes" << std::endl;
-                // Hex dump first 32 bytes
-                std::cout << "[LiveKitBridge]   hex: ";
-                for (size_t i = 0; i < std::min(data.size(), size_t(32)); i++) {
-                    printf("%02x ", static_cast<unsigned char>(data[i]));
+                if (!raw.empty() && raw[0] == '{') {
+                    std::cout << "[LiveKitBridge] WS text (ignored): " << raw.substr(0, 200) << std::endl;
                 }
-                std::cout << std::endl;
-                std::string raw(reinterpret_cast<const char*>(data.data()), data.size());
-                handleSignaling(raw);
             }
         });
 
@@ -68,7 +50,6 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
             std::cout << "[LiveKitBridge] WS closed" << std::endl;
         });
 
-        // LiveKit signaling endpoint: token passed as query param
         std::string wsUrl = url_ + "/rtc?access_token=" + token_;
         ws_->open(wsUrl);
 
@@ -80,127 +61,162 @@ bool LiveKitBridge::connect(const std::string& url, const std::string& token, co
     }
 }
 
-void LiveKitBridge::handleSignaling(const std::string& msg) {
-    try {
-        // Try JSON first (text messages)
-        if (!msg.empty() && msg[0] == '{') {
-            auto j = nlohmann::json::parse(msg);
-            processJsonSignal(j);
-            return;
-        }
-
-        // Binary protobuf message: search for SDP offer (starts with "v=0\r\n")
-        size_t sdpPos = msg.find("v=0\r\n");
-        if (sdpPos != std::string::npos) {
-            std::string sdp = msg.substr(sdpPos);
-            // Trim trailing protobuf garbage
-            size_t end = sdp.find_last_of("\r\n");
-            if (end != std::string::npos && end + 2 < sdp.size()) {
-                // Check if there's more after the SDP ends
-                size_t sdpEnd = sdp.find("\r\n\r\n");
-                if (sdpEnd == std::string::npos) sdpEnd = sdp.find("\n\n");
-                if (sdpEnd != std::string::npos) {
-                    sdp = sdp.substr(0, sdpEnd + 2);
-                }
-            }
-            std::cout << "[LiveKitBridge] Extracted SDP offer (" << sdp.size() << " bytes)" << std::endl;
-            processOffer(sdp);
-            return;
-        }
-
-        // Search for trickle/ICE candidate
-        size_t icePos = msg.find("candidate:");
-        if (icePos != std::string::npos) {
-            // Extract candidate line
-            size_t lineEnd = msg.find("\r\n", icePos);
-            if (lineEnd == std::string::npos) lineEnd = msg.find("\n", icePos);
-            std::string candidate;
-            if (lineEnd != std::string::npos) {
-                candidate = msg.substr(icePos, lineEnd - icePos);
-            } else {
-                candidate = msg.substr(icePos);
-            }
-            std::cout << "[LiveKitBridge] ICE candidate: " << candidate.substr(0, 80) << std::endl;
-            if (pc_) {
-                pc_->addRemoteCandidate(rtc::Candidate(candidate, ""));
-            }
-            return;
-        }
-
-        std::cout << "[LiveKitBridge] Unhandled binary msg (" << msg.size() << " bytes)" << std::endl;
-    } catch (const std::exception& e) {
-        std::cerr << "[LiveKitBridge] Signal parse error: " << e.what() << std::endl;
+void LiveKitBridge::handleSignaling(const uint8_t* data, size_t len) {
+    livekit::SignalResponse resp;
+    if (!resp.ParseFromArray(data, static_cast<int>(len))) {
+        std::cerr << "[LiveKitBridge] Failed to parse SignalResponse protobuf" << std::endl;
+        return;
     }
-}
 
-void LiveKitBridge::processJsonSignal(const nlohmann::json& j) {
-    if (j.contains("offer")) {
-        std::string sdp = j["offer"]["sdp"];
-        processOffer(sdp);
-    } else if (j.contains("trickle") && pc_) {
-        std::string candidate = j["trickle"]["candidate"];
-        std::string sdpMid = j.value("/trickle/sdpMid"_json_pointer, "");
+    std::cout << "[LiveKitBridge] SignalResponse case=" << resp.message_case() << std::endl;
+
+    if (resp.has_join()) {
+        std::cout << "[LiveKitBridge] Join response received, room=" << resp.join().room().name() << std::endl;
+        createPublisherPC();
+    } else if (resp.has_answer() && pcPublisher_) {
+        std::string sdp = resp.answer().sdp();
+        std::cout << "[LiveKitBridge] Received answer for publisher, SDP len=" << sdp.size() << std::endl;
+        pcPublisher_->setRemoteDescription(rtc::Description(sdp, "answer"));
+    } else if (resp.has_offer()) {
+        std::string sdp = resp.offer().sdp();
+        std::cout << "[LiveKitBridge] Received subscriber offer, SDP len=" << sdp.size() << std::endl;
+
+        rtc::Configuration cfg;
+        cfg.iceServers.emplace_back("stun:stun.l.google.com:19302");
+
+        pcSubscriber_ = std::make_shared<rtc::PeerConnection>(cfg);
+
+        pcSubscriber_->onStateChange([](rtc::PeerConnection::State s) {
+            std::cout << "[LiveKitBridge] Subscriber PC state: " << static_cast<int>(s) << std::endl;
+        });
+
+        pcSubscriber_->onGatheringStateChange([this](rtc::PeerConnection::GatheringState s) {
+            if (s == rtc::PeerConnection::GatheringState::Complete) {
+                sendAnswer();
+            }
+        });
+
+        pcSubscriber_->onDataChannel([this](std::shared_ptr<rtc::DataChannel> dc) {
+            setupDataChannel(dc, dc->label());
+        });
+
+        pcSubscriber_->setRemoteDescription(rtc::Description(sdp, "offer"));
+
+        // Create input data channel on subscriber (server may also create it)
+        rtc::DataChannelInit inInit;
+        inInit.reliability.type = rtc::Reliability::Type::Reliable;
+        dcIn_ = pcSubscriber_->createDataChannel("in", inInit);
+        setupDataChannel(dcIn_, "in");
+
+    } else if (resp.has_trickle()) {
+        std::string candidate = resp.trickle().candidateinit();
+        int target = resp.trickle().target();
         if (!candidate.empty()) {
-            pc_->addRemoteCandidate(rtc::Candidate(candidate, sdpMid));
+            std::cout << "[LiveKitBridge] Remote ICE candidate (target=" << target << "): " << candidate.substr(0, 80) << std::endl;
+            if (target == livekit::SignalTarget::PUBLISHER && pcPublisher_) {
+                pcPublisher_->addRemoteCandidate(rtc::Candidate(candidate, "0"));
+            } else if (target == livekit::SignalTarget::SUBSCRIBER && pcSubscriber_) {
+                pcSubscriber_->addRemoteCandidate(rtc::Candidate(candidate, "0"));
+            }
         }
     }
 }
 
-void LiveKitBridge::processOffer(const std::string& sdp) {
+void LiveKitBridge::createPublisherPC() {
     rtc::Configuration cfg;
-    cfg.iceServers.emplace_back("stun:stun.l.google.com:19302");
+    // No STUN/TURN - use host candidates only (GF server and LiveKit SFU are on same network)
 
-    pc_ = std::make_shared<rtc::PeerConnection>(cfg);
+    pcPublisher_ = std::make_shared<rtc::PeerConnection>(cfg);
 
-    pc_->onStateChange([](rtc::PeerConnection::State s) {
-        std::cout << "[LiveKitBridge] PC state: " << static_cast<int>(s) << std::endl;
+    pcPublisher_->onStateChange([](rtc::PeerConnection::State s) {
+        std::cout << "[LiveKitBridge] Publisher PC state: " << static_cast<int>(s) << std::endl;
     });
 
-    pc_->onGatheringStateChange([this](rtc::PeerConnection::GatheringState s) {
-        if (s == rtc::PeerConnection::GatheringState::Complete) {
-            sendAnswer();
-        }
+    pcPublisher_->onLocalDescription([this](rtc::Description desc) {
+        std::cout << "[LiveKitBridge] Publisher local description ready, sending offer" << std::endl;
+        sendOffer();
     });
 
-    pc_->onDataChannel([this](std::shared_ptr<rtc::DataChannel> dc) {
-        setupDataChannel(dc, dc->label());
-    });
-
-    // Set remote description (offer from LiveKit server)
-    pc_->setRemoteDescription(rtc::Description(sdp, "offer"));
-
-    // Create data channels: gs = unreliable (game state, freshness > reliability)
+    // Create data channels on publisher: gs (unreliable), ev (reliable)
     rtc::DataChannelInit gsInit;
     gsInit.reliability.type = rtc::Reliability::Type::Rexmit;
     gsInit.reliability.rexmit = 0;
-    dcGs_ = pc_->createDataChannel("gs", gsInit);
+    dcGs_ = pcPublisher_->createDataChannel("gs", gsInit);
     setupDataChannel(dcGs_, "gs");
 
-    // ev = reliable (events must arrive)
     rtc::DataChannelInit evInit;
     evInit.reliability.type = rtc::Reliability::Type::Reliable;
-    dcEv_ = pc_->createDataChannel("ev", evInit);
+    dcEv_ = pcPublisher_->createDataChannel("ev", evInit);
     setupDataChannel(dcEv_, "ev");
 
-    // in = reliable (inputs must not be dropped)
-    rtc::DataChannelInit inInit;
-    inInit.reliability.type = rtc::Reliability::Type::Reliable;
-    dcIn_ = pc_->createDataChannel("in", inInit);
-    setupDataChannel(dcIn_, "in");
+    std::cout << "[LiveKitBridge] Publisher PC created, waiting for ICE gathering..." << std::endl;
+}
+
+void LiveKitBridge::sendOffer() {
+    if (!pcPublisher_ || !ws_) return;
+    auto desc = pcPublisher_->localDescription();
+    if (!desc) return;
+
+    livekit::SignalRequest req;
+    auto* offer = req.mutable_offer();
+    offer->set_type("offer");
+    offer->set_sdp(std::string(desc.value()));
+
+    std::string bin;
+    if (!req.SerializeToString(&bin)) {
+        std::cerr << "[LiveKitBridge] Failed to serialize offer" << std::endl;
+        return;
+    }
+
+    rtc::binary msg;
+    msg.reserve(bin.size());
+    for (char c : bin) msg.push_back(static_cast<std::byte>(c));
+    ws_->send(msg);
+    std::cout << "[LiveKitBridge] Sent publisher offer (protobuf), len=" << bin.size() << std::endl;
 }
 
 void LiveKitBridge::sendAnswer() {
-    if (!pc_ || !ws_) return;
-    auto desc = pc_->localDescription();
+    if (!pcSubscriber_ || !ws_) return;
+    auto desc = pcSubscriber_->localDescription();
     if (!desc) return;
 
-    nlohmann::json answer = {
-        {"answer", {
-            {"type", "answer"},
-            {"sdp", std::string(desc.value())}
-        }}
-    };
-    ws_->send(answer.dump());
+    livekit::SignalRequest req;
+    auto* answer = req.mutable_answer();
+    answer->set_type("answer");
+    answer->set_sdp(std::string(desc.value()));
+
+    std::string bin;
+    if (!req.SerializeToString(&bin)) {
+        std::cerr << "[LiveKitBridge] Failed to serialize answer" << std::endl;
+        return;
+    }
+
+    rtc::binary msg;
+    msg.reserve(bin.size());
+    for (char c : bin) msg.push_back(static_cast<std::byte>(c));
+    ws_->send(msg);
+    std::cout << "[LiveKitBridge] Sent subscriber answer (protobuf), len=" << bin.size() << std::endl;
+}
+
+void LiveKitBridge::sendTrickle(const std::string& candidate) {
+    if (!ws_) return;
+
+    livekit::SignalRequest req;
+    auto* trickle = req.mutable_trickle();
+    trickle->set_candidateinit(candidate);
+    trickle->set_target(livekit::SignalTarget::PUBLISHER);
+
+    std::string bin;
+    if (!req.SerializeToString(&bin)) {
+        std::cerr << "[LiveKitBridge] Failed to serialize trickle" << std::endl;
+        return;
+    }
+
+    rtc::binary msg;
+    msg.reserve(bin.size());
+    for (char c : bin) msg.push_back(static_cast<std::byte>(c));
+    ws_->send(msg);
+    std::cout << "[LiveKitBridge] Sent trickle (protobuf), len=" << bin.size() << std::endl;
 }
 
 void LiveKitBridge::setupDataChannel(std::shared_ptr<rtc::DataChannel> dc, const std::string& label) {
@@ -231,14 +247,11 @@ void LiveKitBridge::setupDataChannel(std::shared_ptr<rtc::DataChannel> dc, const
 void LiveKitBridge::publishData(const uint8_t* data, size_t len, const char* topic, bool /*reliable*/) {
     if (!connected_.load()) return;
 
-    // Route by topic semantics:
-    //   "gs"                  -> unreliable (freshness wins over reliability)
-    //   "ev" | "setup" | "in" -> reliable (events, match setup, inputs must arrive)
     std::string t(topic);
     std::shared_ptr<rtc::DataChannel> dc;
     if (t == "gs")                                  dc = dcGs_;
     else if (t == "ev" || t == "setup" || t == "in") dc = dcEv_;
-    else                                             dc = dcEv_; // default reliable
+    else                                             dc = dcEv_;
 
     if (dc && dc->isOpen()) {
         rtc::binary msg(reinterpret_cast<const std::byte*>(data),
@@ -248,7 +261,6 @@ void LiveKitBridge::publishData(const uint8_t* data, size_t len, const char* top
 }
 
 bool LiveKitBridge::isReadyForData() const {
-    // "ready" = reliable channel open (so MatchSetup can be sent)
     return dcEv_ && dcEv_->isOpen();
 }
 
@@ -258,7 +270,8 @@ void LiveKitBridge::disconnect() {
     dcGs_.reset();
     dcEv_.reset();
     dcIn_.reset();
-    pc_.reset();
+    pcPublisher_.reset();
+    pcSubscriber_.reset();
     if (ws_) {
         ws_->close();
         ws_.reset();

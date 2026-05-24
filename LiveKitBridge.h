@@ -11,6 +11,9 @@
 namespace livekit {
     class Room;
     class RoomDelegate;
+    struct RoomOptions;
+    struct UserDataPacketEvent;
+    struct ConnectionStateChangedEvent;
 }
 
 // libdatachannel forward declarations (fallback)
@@ -59,6 +62,7 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> readyForData_{false};
 
+#define USE_LIVEKIT_SDK
 #ifdef USE_LIVEKIT_SDK
     // Official SDK members
     std::unique_ptr<livekit::Room> room_;
@@ -76,15 +80,17 @@ private:
 #else
     // libdatachannel fallback members
     std::unique_ptr<rtc::WebSocket> ws_;
-    std::shared_ptr<rtc::PeerConnection> pc_;
+    std::shared_ptr<rtc::PeerConnection> pcPublisher_;
+    std::shared_ptr<rtc::PeerConnection> pcSubscriber_;
     std::shared_ptr<rtc::DataChannel> dcGs_;
     std::shared_ptr<rtc::DataChannel> dcEv_;
     std::shared_ptr<rtc::DataChannel> dcIn_;
 
-    void handleSignaling(const std::string& msg);
-    void processJsonSignal(const class nlohmann::json& j);
-    void processOffer(const std::string& sdp);
+    void handleSignaling(const uint8_t* data, size_t len);
+    void createPublisherPC();
+    void sendOffer();
     void sendAnswer();
+    void sendTrickle(const std::string& candidate);
     void setupDataChannel(std::shared_ptr<rtc::DataChannel> dc, const std::string& label);
 #endif
 

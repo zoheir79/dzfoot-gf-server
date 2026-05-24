@@ -1,0 +1,242 @@
+{
+  "presets": [
+    {
+      "name": "classic_european",
+      "skin_tone": "light",
+      "hair_style": "short",
+      "hair_color": "blonde",
+      "beard_style": "none",
+      "beard_color": "blonde",
+      "eye_color": "blue",
+      "height_factor": 1.0,
+      "body_type": "average",
+      "description": "Joueur européen classique, cheveux blonds courts"
+    },
+    {
+      "name": "mediterranean",
+      "skin_tone": "olive",
+      "hair_style": "curly",
+      "hair_color": "dark_brown",
+      "beard_style": "stubble",
+      "beard_color": "dark_brown",
+      "eye_color": "brown",
+      "height_factor": 0.98,
+      "body_type": "average",
+      "description": "Joueur méditerranéen, cheveux bruns bouclés"
+    },
+    {
+      "name": "african_athletic",
+      "skin_tone": "dark",
+      "hair_style": "short",
+      "hair_color": "black",
+      "beard_style": "short",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 1.02,
+      "body_type": "muscular",
+      "description": "Joueur africain athlétique, cheveux noirs courts"
+    },
+    {
+      "name": "north_african",
+      "skin_tone": "tan",
+      "hair_style": "curly",
+      "hair_color": "black",
+      "beard_style": "full",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 0.99,
+      "body_type": "average",
+      "description": "Joueur maghrébin, cheveux noirs bouclés, barbe"
+    },
+    {
+      "name": "latin_american",
+      "skin_tone": "medium",
+      "hair_style": "long",
+      "hair_color": "dark_brown",
+      "beard_style": "none",
+      "beard_color": "dark_brown",
+      "eye_color": "brown",
+      "height_factor": 0.97,
+      "body_type": "average",
+      "description": "Joueur latino, cheveux longs bruns"
+    },
+    {
+      "name": "scandinavian",
+      "skin_tone": "light",
+      "hair_style": "short",
+      "hair_color": "blonde",
+      "beard_style": "none",
+      "beard_color": "blonde",
+      "eye_color": "blue",
+      "height_factor": 1.03,
+      "body_type": "muscular",
+      "description": "Joueur scandinave, grand, blond"
+    },
+    {
+      "name": "asian",
+      "skin_tone": "olive",
+      "hair_style": "short",
+      "hair_color": "black",
+      "beard_style": "none",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 0.96,
+      "body_type": "average",
+      "description": "Joueur asiatique, cheveux noirs"
+    },
+    {
+      "name": "redhead_warrior",
+      "skin_tone": "light",
+      "hair_style": "curly",
+      "hair_color": "red",
+      "beard_style": "stubble",
+      "beard_color": "red",
+      "eye_color": "green",
+      "height_factor": 0.98,
+      "body_type": "average",
+      "description": "Joueur roux aux yeux verts"
+    },
+    {
+      "name": "veteran_grey",
+      "skin_tone": "medium",
+      "hair_style": "short",
+      "hair_color": "grey",
+      "beard_style": "short",
+      "beard_color": "grey",
+      "eye_color": "hazel",
+      "height_factor": 0.99,
+      "body_type": "average",
+      "description": "Vétéran expérimenté, cheveux gris"
+    },
+    {
+      "name": "young_talent",
+      "skin_tone": "medium",
+      "hair_style": "mohawk",
+      "hair_color": "brown",
+      "beard_style": "none",
+      "beard_color": "brown",
+      "eye_color": "blue",
+      "height_factor": 0.95,
+      "body_type": "thin",
+      "description": "Jeune talent avec crête"
+    },
+    {
+      "name": "powerful_striker",
+      "skin_tone": "brown",
+      "hair_style": "bald",
+      "hair_color": "black",
+      "beard_style": "full",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 1.04,
+      "body_type": "heavy",
+      "description": "Attaquant puissant, chauve et barbu"
+    },
+    {
+      "name": "elegant_playmaker",
+      "skin_tone": "olive",
+      "hair_style": "ponytail",
+      "hair_color": "dark_brown",
+      "beard_style": "stubble",
+      "beard_color": "dark_brown",
+      "eye_color": "hazel",
+      "height_factor": 0.98,
+      "body_type": "average",
+      "description": "Meneur de jeu élégant, queue de cheval"
+    },
+    {
+      "name": "desert_warrior",
+      "skin_tone": "tan",
+      "hair_style": "curly",
+      "hair_color": "black",
+      "beard_style": "full",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 1.0,
+      "body_type": "muscular",
+      "description": "Guerrier du désert, barbe fournie"
+    },
+    {
+      "name": "island_talent",
+      "skin_tone": "dark",
+      "hair_style": "long",
+      "hair_color": "black",
+      "beard_style": "none",
+      "beard_color": "black",
+      "eye_color": "brown",
+      "height_factor": 1.01,
+      "body_type": "muscular",
+      "description": "Talent des îles, cheveux longs"
+    },
+    {
+      "name": "street_footballer",
+      "skin_tone": "medium",
+      "hair_style": "short",
+      "hair_color": "light_brown",
+      "beard_style": "stubble",
+      "beard_color": "light_brown",
+      "eye_color": "green",
+      "height_factor": 0.97,
+      "body_type": "thin",
+      "description": "Footballeur de rue, look décontracté"
+    },
+    {
+      "name": "iron_defender",
+      "skin_tone": "light",
+      "hair_style": "short",
+      "hair_color": "red",
+      "beard_style": "short",
+      "beard_color": "red",
+      "eye_color": "blue",
+      "height_factor": 1.05,
+      "body_type": "heavy",
+      "description": "Défenseur imposant, roux"
+    }
+  ],
+  "skin_tones": [
+    "light",
+    "medium",
+    "olive",
+    "tan",
+    "brown",
+    "dark",
+    "deep"
+  ],
+  "hair_styles": [
+    "bald",
+    "short",
+    "long",
+    "mohawk",
+    "curly",
+    "ponytail"
+  ],
+  "hair_colors": [
+    "black",
+    "dark_brown",
+    "brown",
+    "light_brown",
+    "blonde",
+    "red",
+    "grey",
+    "white"
+  ],
+  "beard_styles": [
+    "none",
+    "stubble",
+    "short",
+    "full"
+  ],
+  "eye_colors": [
+    "brown",
+    "blue",
+    "green",
+    "hazel",
+    "grey"
+  ],
+  "body_types": [
+    "thin",
+    "average",
+    "muscular",
+    "heavy"
+  ]
+}

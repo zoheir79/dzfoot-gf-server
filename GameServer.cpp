@@ -1,5 +1,4 @@
 #include "GameServer.h"
-#include "LiveKitBridge.h"
 #include "RedisClient.h"
 #include "StatsPoster.h"
 #include "MatchConfig.h"
@@ -76,7 +75,7 @@ Server::Server(const Config& cfg) : cfg_(cfg) {
 Server::~Server() = default;
 
 void Server::sendMatchSetup() {
-    if (!gameEnv_ || !cfg_.livekitBridge) return;
+    if (!gameEnv_ || !cfg_.redis || !cfg_.redis->isConfigured()) return;
 
     MatchSetupPacket setup{};
     copyString(setup.teamAName, sizeof(setup.teamAName), cfg_.teamA);
@@ -120,7 +119,12 @@ void Server::sendMatchSetup() {
         }
     }
 
-    cfg_.livekitBridge->publishData(reinterpret_cast<const uint8_t*>(&setup), sizeof(setup), "setup", true);
+    // Prefix room_id (36 bytes) for backend routing
+    std::vector<uint8_t> setupBuf(36 + sizeof(setup));
+    auto roomBytes = cfg_.roomId.substr(0, 36);
+    std::memcpy(setupBuf.data(), roomBytes.c_str(), roomBytes.size());
+    std::memcpy(setupBuf.data() + 36, &setup, sizeof(setup));
+    cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
     matchSetupSent_ = true;
     std::cout << "[GameServer] MatchSetup broadcast (" << sizeof(setup) << " bytes)" << std::endl;
 }
@@ -135,13 +139,7 @@ void Server::run() {
         setenv("GFOOTBALL_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 1);
     }
 
-    // Connect to Redis (best-effort)
-    if (!cfg_.redisUrl.empty()) {
-        redis_ = std::make_unique<RedisClient>();
-        if (!redis_->configure(cfg_.redisUrl)) {
-            std::cerr << "[GameServer] Redis configure failed for " << cfg_.redisUrl << std::endl;
-        }
-    }
+    // Redis is already configured by main() and passed via cfg_.redis
 
     gameEnv_ = new GameEnv();
 
@@ -149,9 +147,41 @@ void Server::run() {
     // With the fixed start_game() (uses this->scenario_config), we must
     // pre-fill formations so GF can initialise controllers correctly.
     auto& sc = gameEnv_->scenario_config;
-    sc.left_agents = 1;                           // always 1 human on left
-    sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0;  // 1 human for 1v1, 0 for vs AI
+    sc.left_agents = (cfg_.gameMode == 2) ? 0 : 1;  // 0 for ai_vs_ai, 1 otherwise
+    sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0; // 1 for 1v1, 0 for vs_ai/ai_vs_ai
     sc.game_duration = cfg_.duration * kSimFrequencyHz;  // GF steps (60 steps/sec)
+
+    // Load custom configuration if provided (via JSON string or path)
+    MatchConfig mcfg;
+    bool hasCustomConfig = false;
+    if (!cfg_.matchConfigJson.empty()) {
+        if (MatchConfig::loadString(cfg_.matchConfigJson, mcfg)) {
+            hasCustomConfig = true;
+            std::cout << "[GameServer] Loaded custom match config from JSON string" << std::endl;
+        } else {
+            std::cerr << "[GameServer] Failed to load match config from JSON string" << std::endl;
+        }
+    } else if (!cfg_.matchConfigPath.empty()) {
+        if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
+            hasCustomConfig = true;
+            std::cout << "[GameServer] Loaded custom match config from file: " << cfg_.matchConfigPath << std::endl;
+        } else {
+            std::cerr << "[GameServer] Failed to load match config from file" << std::endl;
+        }
+    }
+
+    if (hasCustomConfig) {
+        sc.game_duration = mcfg.duration_seconds * kSimFrequencyHz;
+        if (!mcfg.left_team.formation.empty()) {
+            sc.left_team = buildFormation(mcfg.left_team);
+        }
+        if (!mcfg.right_team.formation.empty()) {
+            sc.right_team = buildFormation(mcfg.right_team);
+        }
+        std::cout << "[GameServer] Custom formation applied ("
+                  << sc.left_team.size() << " left, "
+                  << sc.right_team.size() << " right players)" << std::endl;
+    }
 
     // Pre-fill default 4-3-3 formations (avoids empty-team crash)
     if (sc.left_team.empty()) appendDefault433(sc.left_team, true);
@@ -161,91 +191,54 @@ void Server::run() {
 
     std::cout << "[GameServer] GF engine started (headless)" << std::endl;
 
-    // If external JSON config is provided, apply custom formations/duration
-    if (!cfg_.matchConfigPath.empty()) {
-        MatchConfig mcfg;
-        if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
-            sc.game_duration = mcfg.duration_seconds * kSimFrequencyHz;
-            if (!mcfg.left_team.formation.empty()) {
-                sc.left_team = buildFormation(mcfg.left_team);
-            }
-            if (!mcfg.right_team.formation.empty()) {
-                sc.right_team = buildFormation(mcfg.right_team);
-            }
-            std::cout << "[GameServer] Custom config applied ("
-                      << sc.left_team.size() << " left, "
-                      << sc.right_team.size() << " right players)" << std::endl;
-        } else {
-            std::cerr << "[GameServer] Failed to load match config, using defaults" << std::endl;
-        }
-    }
-
     // Warm up: a few env steps so Match initialises player data fully.
     for (int i = 0; i < 5; ++i) {
         gameEnv_->step();
     }
 
     // Inject custom player skills from match config into GF PlayerData
-    if (!cfg_.matchConfigPath.empty()) {
-        MatchConfig mcfg;
-        if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
-            if (!mcfg.left_team.players.empty() || !mcfg.right_team.players.empty()) {
-                std::cout << "[GameServer] Injecting custom player skills into GF engine" << std::endl;
-            }
-            if (gameEnv_ && gameEnv_->context && gameEnv_->context->gameTask) {
-                Match* match = gameEnv_->context->gameTask->GetMatch();
-                if (match) {
-                    auto applyTeamSkills = [&](int teamIdx, const TeamConfig& tc) {
-                        if (tc.players.empty()) return;
-                        Team* team = match->GetTeam(teamIdx);
-                        if (!team) return;
-                        const TeamData* ctd = team->GetTeamData();
-                        if (!ctd) return;
-                        int nPlayers = std::min((int)tc.players.size(), ctd->GetPlayerNum());
-                        for (int i = 0; i < nPlayers; ++i) {
-                            PlayerData* pd = ctd->GetPlayerData(i);
-                            if (!pd) continue;
-                            const auto& profile = tc.players[i];
-                            for (const auto& kv : profile.skills) {
-                                PlayerStat stat = skillNameToEnum(kv.first);
-                                if (stat != player_stat_max) {
-                                    pd->SetStat(stat, kv.second);
-                                } else {
-                                    std::cerr << "[GameServer] Unknown skill '" << kv.first
-                                              << "' for player " << profile.name << std::endl;
-                                }
+    if (hasCustomConfig) {
+        if (!mcfg.left_team.players.empty() || !mcfg.right_team.players.empty()) {
+            std::cout << "[GameServer] Injecting custom player skills into GF engine" << std::endl;
+        }
+        if (gameEnv_ && gameEnv_->context && gameEnv_->context->gameTask) {
+            Match* match = gameEnv_->context->gameTask->GetMatch();
+            if (match) {
+                auto applyTeamSkills = [&](int teamIdx, const TeamConfig& tc) {
+                    if (tc.players.empty()) return;
+                    Team* team = match->GetTeam(teamIdx);
+                    if (!team) return;
+                    const TeamData* ctd = team->GetTeamData();
+                    if (!ctd) return;
+                    int nPlayers = std::min((int)tc.players.size(), ctd->GetPlayerNum());
+                    for (int i = 0; i < nPlayers; ++i) {
+                        PlayerData* pd = ctd->GetPlayerData(i);
+                        if (!pd) continue;
+                        const auto& profile = tc.players[i];
+                        for (const auto& kv : profile.skills) {
+                            PlayerStat stat = skillNameToEnum(kv.first);
+                            if (stat != player_stat_max) {
+                                pd->SetStat(stat, kv.second);
+                            } else {
+                                std::cerr << "[GameServer] Unknown skill '" << kv.first
+                                          << "' for player " << profile.name << std::endl;
                             }
-                            std::cout << "[GameServer] Skills injected for " << profile.name
-                                      << " (team " << teamIdx << ", slot " << i << ")" << std::endl;
                         }
-                    };
-                    applyTeamSkills(0, mcfg.left_team);
-                    applyTeamSkills(1, mcfg.right_team);
-                    std::cout << "[GameServer] Custom player skills applied to both teams" << std::endl;
-                }
+                        std::cout << "[GameServer] Skills injected for " << profile.name
+                                  << " (team " << teamIdx << ", slot " << i << ")" << std::endl;
+                    }
+                };
+                applyTeamSkills(0, mcfg.left_team);
+                applyTeamSkills(1, mcfg.right_team);
+                std::cout << "[GameServer] Custom player skills applied to both teams" << std::endl;
             }
-        }
-    }
-
-    // Wait for LiveKit data channels to be open before broadcasting setup/state.
-    // This prevents silently dropped initial packets while WebRTC negotiation completes.
-    if (cfg_.livekitBridge) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (!cfg_.livekitBridge->isReadyForData() &&
-               std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-        if (!cfg_.livekitBridge->isReadyForData()) {
-            std::cerr << "[GameServer] LiveKit DC not ready after 15s, continuing without bridge" << std::endl;
-        } else {
-            std::cout << "[GameServer] LiveKit data channels ready" << std::endl;
         }
     }
 
     sendMatchSetup();
 
-    if (redis_ && redis_->isConfigured()) {
-        redis_->publish("gf.ready", cfg_.roomId);
+    if (cfg_.redis && cfg_.redis->isConfigured()) {
+        cfg_.redis->publish("gf.ready", cfg_.roomId);
     }
 
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -272,15 +265,15 @@ void Server::run() {
             tick();
         } catch (const std::exception& e) {
             std::cerr << "[GameServer] Exception in tick(): " << e.what() << std::endl;
-            if (redis_ && redis_->isConfigured()) {
-                redis_->publish("gf.crashed", cfg_.roomId);
+            if (cfg_.redis && cfg_.redis->isConfigured()) {
+                cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
             running_ = false;
             break;
         } catch (...) {
             std::cerr << "[GameServer] Unknown exception in tick()" << std::endl;
-            if (redis_ && redis_->isConfigured()) {
-                redis_->publish("gf.crashed", cfg_.roomId);
+            if (cfg_.redis && cfg_.redis->isConfigured()) {
+                cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
             running_ = false;
             break;
@@ -291,10 +284,10 @@ void Server::run() {
         }
 
         // 1 Hz heartbeat (every 60 ticks)
-        if (tickCounter_ % 60 == 0 && redis_ && redis_->isConfigured()) {
+        if (tickCounter_ % 60 == 0 && cfg_.redis && cfg_.redis->isConfigured()) {
             auto now = std::chrono::system_clock::now().time_since_epoch();
             auto sec = std::chrono::duration_cast<std::chrono::seconds>(now).count();
-            redis_->hset("gf.heartbeat", cfg_.roomId, std::to_string(sec));
+            cfg_.redis->hset("gf.heartbeat", cfg_.roomId, std::to_string(sec));
         }
 
         auto elapsed = std::chrono::steady_clock::now() - frameStart;
@@ -304,8 +297,8 @@ void Server::run() {
         }
     }
 
-    if (redis_ && redis_->isConfigured()) {
-        redis_->publish("gf.finished", cfg_.roomId);
+    if (cfg_.redis && cfg_.redis->isConfigured()) {
+        cfg_.redis->publish("gf.finished", cfg_.roomId);
     }
 
     delete gameEnv_;
@@ -624,14 +617,15 @@ uint8_t Server::deduceAnimId(int playerIndex, int teamId) {
             }
             default: break;
         }
-        if (vel == e_Velocity_Idle) return ANIM_GK_IDLE;
-        if (vel == e_Velocity_Walk || vel == e_Velocity_Sprint) {
-            // keeper moving normally, not diving
-            return ANIM_GK_IDLE;
+        // Default: use velocity-based animation for GK (no diving when just moving)
+        switch (vel) {
+            case e_Velocity_Idle:   return ANIM_GK_IDLE;
+            case e_Velocity_Walk:   return ANIM_GK_IDLE;
+            case e_Velocity_Dribble: return ANIM_GK_IDLE;
+            case e_Velocity_Sprint: return ANIM_GK_IDLE;
+            default: break;
         }
-        // any movement -> dive toward ball
-        float side = ballSideRelative(p, ball);
-        return (side > 0.0f) ? ANIM_GK_DIVE_R : ANIM_GK_DIVE_L;
+        return ANIM_GK_IDLE;
     }
 
     // --- FIELD PLAYERS by function type ---
@@ -654,17 +648,19 @@ uint8_t Server::deduceAnimId(int playerIndex, int teamId) {
         case e_FunctionType_Header:     return ANIM_HEADER;
         case e_FunctionType_Trap:
         case e_FunctionType_BallControl: {
-            if (vel == e_Velocity_Idle) return ANIM_IDLE;
-            if (vel == e_Velocity_Dribble) return ANIM_DRIBBLE;
+            // Only show DRIBBLE if player actually has the ball
+            bool hasPossession = p->HasPossession();
+            if (vel == e_Velocity_Idle) return hasPossession ? ANIM_DRIBBLE : ANIM_IDLE;
+            if (vel == e_Velocity_Dribble) return hasPossession ? ANIM_DRIBBLE : ANIM_RUN;
             if (vel == e_Velocity_Walk) return ANIM_WALK;
+            if (vel == e_Velocity_Sprint) return ANIM_SPRINT;
             return ANIM_RUN;
         }
         case e_FunctionType_Sliding:    return ANIM_TACKLE;
         case e_FunctionType_Trip:       return ANIM_FALL;
         case e_FunctionType_Deflect:
         case e_FunctionType_Interfere: {
-            float side = ballSideRelative(p, ball);
-            return (side > 0.0f) ? ANIM_GK_DIVE_R : ANIM_GK_DIVE_L; // reuse keeper dives for deflections
+            return ANIM_TACKLE;
         }
         case e_FunctionType_Special:    return ANIM_CELEBRATE;
         default: break;
@@ -685,13 +681,21 @@ float Server::getHeadingFromDir(float dx, float dz) const {
 }
 
 void Server::broadcastGameState() {
-    if (!cfg_.livekitBridge) return;
-    cfg_.livekitBridge->publishData(reinterpret_cast<const uint8_t*>(&currentState_),
-                                    sizeof(currentState_), "gs", false);
+    if (!cfg_.redis || !cfg_.redis->isConfigured()) return;
+
+    auto roomBytes = cfg_.roomId.substr(0, 36);
+
+    // Prefix room_id (36 bytes) for backend routing
+    std::vector<uint8_t> gsBuf(36 + sizeof(currentState_));
+    std::memcpy(gsBuf.data(), roomBytes.c_str(), roomBytes.size());
+    std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
+    cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
 
     for (const auto& ev : eventQueue_) {
-        cfg_.livekitBridge->publishData(reinterpret_cast<const uint8_t*>(&ev),
-                                        sizeof(ev), "ev", true);
+        std::vector<uint8_t> evBuf(36 + sizeof(ev));
+        std::memcpy(evBuf.data(), roomBytes.c_str(), roomBytes.size());
+        std::memcpy(evBuf.data() + 36, &ev, sizeof(ev));
+        cfg_.redis->publishBinary("gf.event", evBuf.data(), evBuf.size());
     }
     eventQueue_.clear();
 }
@@ -716,6 +720,10 @@ void Server::applyPendingInputs() {
         // Anti-cheat: validate team assignment
         if (inp.team > 1) {
             std::cerr << "[GameServer] Anti-cheat: rejected input with invalid team=" << (int)inp.team << std::endl;
+            continue;
+        }
+        if (cfg_.gameMode == 2) {
+            // ai_vs_ai: no human inputs allowed
             continue;
         }
         if (cfg_.gameMode == 1 && inp.team == 1) {

@@ -37,6 +37,9 @@ struct MatchConfig {
 
     // Load from JSON file (returns true on success)
     static bool load(const std::string& path, MatchConfig& out);
+
+    // Load from JSON string (returns true on success)
+    static bool loadString(const std::string& jsonStr, MatchConfig& out);
 };
 
 // Convert string role to GF e_PlayerRole

@@ -10,7 +10,6 @@
 #include <memory>
 #include "MatchSetup.h"
 
-class LiveKitBridge;
 class GameEnv;
 class RedisClient;
 
@@ -80,11 +79,12 @@ struct Config {
     int duration = 600; // seconds
     std::string statsUrl;
     std::string redisUrl;
-    LiveKitBridge* livekitBridge = nullptr;
+    RedisClient* redis = nullptr; // for publishing game states + subscribing inputs
     int broadcastRateHz = 20; // GameState broadcast rate (simulation stays at 60 Hz)
     uint8_t gameMode = 1; // 0=1v1 (both human), 1=vs AI (A human, B AI)
     std::atomic<bool>* shutdownFlag = nullptr; // graceful shutdown from signal handler
     std::string matchConfigPath; // JSON file with formation, duration, etc. (optional)
+    std::string matchConfigJson; // JSON string with formation, duration, etc. (optional)
 };
 
 // ------------------------------------------------------------------
@@ -208,7 +208,6 @@ private:
     uint64_t baseTimestampUs_ = 0;
 
     GameEnv* gameEnv_ = nullptr;
-    std::unique_ptr<RedisClient> redis_;
     std::mutex inputMutex_;
     std::queue<PlayerInput> inputQueue_;
 

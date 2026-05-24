@@ -31,16 +31,9 @@ std::vector<FormationEntry> buildFormation(const TeamConfig& tc) {
     return out;
 }
 
-bool MatchConfig::load(const std::string& path, MatchConfig& out) {
-    std::ifstream f(path);
-    if (!f.is_open()) {
-        std::cerr << "[MatchConfig] Cannot open " << path << std::endl;
-        return false;
-    }
-
+bool MatchConfig::loadString(const std::string& jsonStr, MatchConfig& out) {
     try {
-        json j;
-        f >> j;
+        json j = json::parse(jsonStr);
 
         out.duration_seconds = j.value("duration_seconds", 600);
         out.mode = j.value("mode", "vs_ai");
@@ -81,6 +74,17 @@ bool MatchConfig::load(const std::string& path, MatchConfig& out) {
         std::cerr << "[MatchConfig] JSON parse error: " << e.what() << std::endl;
         return false;
     }
+}
+
+bool MatchConfig::load(const std::string& path, MatchConfig& out) {
+    std::ifstream f(path);
+    if (!f.is_open()) {
+        std::cerr << "[MatchConfig] Cannot open " << path << std::endl;
+        return false;
+    }
+    std::string str((std::istreambuf_iterator<char>(f)),
+                     std::istreambuf_iterator<char>());
+    return loadString(str, out);
 }
 
 } // namespace GameServer
