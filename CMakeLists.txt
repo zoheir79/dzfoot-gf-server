@@ -49,9 +49,11 @@ set(GF_LINK_LIBS
 
 target_link_libraries(gf_server ${GF_LINK_LIBS})
 
-# Protocol layout test (always built to catch binary mismatches early)
-add_executable(test_protocol tests/test_protocol_layout.cpp)
-target_include_directories(test_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# Protocol layout test (built if tests directory is included in context)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_protocol_layout.cpp")
+    add_executable(test_protocol tests/test_protocol_layout.cpp)
+    target_include_directories(test_protocol PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
 
 # Optional: build 60Hz physics validation test (disabled by default to keep prod build fast)
 option(BUILD_60HZ_TEST "Build 60Hz physics validation test executable" OFF)

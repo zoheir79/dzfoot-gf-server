@@ -29,6 +29,8 @@
 
 namespace GameServer {
 
+using namespace dzfoot;
+
 // Forward declaration: defined at end of this namespace
 PlayerStat skillNameToEnum(const std::string& name);
 
