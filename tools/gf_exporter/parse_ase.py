@@ -17,6 +17,7 @@ class ASEMesh:
     faces: List[Tuple[int, int, int]] = field(default_factory=list)
     material_name: str = ""
     texture_path: str = ""
+    material_ref: int = -1
 
 
 def parse_ase(filepath: str) -> List[ASEMesh]:
@@ -121,6 +122,13 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
             # Find MESH block
             while i < len(lines):
                 l = lines[i].strip()
+                if l.startswith('*MATERIAL_REF'):
+                    parts = l.split()
+                    if len(parts) >= 2:
+                        try:
+                            mesh.material_ref = int(parts[1])
+                        except ValueError:
+                            mesh.material_ref = -1
                 if l == '*MESH {' or l.startswith('*MESH {'):
                     i += 1
                     break
@@ -220,7 +228,11 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
 
             mesh.normals = vertex_normals_temp
 
-            if materials:
+            if mesh.material_ref in materials:
+                material = materials[mesh.material_ref]
+                mesh.material_name = material['name']
+                mesh.texture_path = material['texture']
+            elif materials:
                 first = list(materials.values())[0]
                 mesh.material_name = first['name']
                 mesh.texture_path = first['texture']

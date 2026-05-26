@@ -9,7 +9,7 @@ import base64
 from dataclasses import dataclass, field
 from typing import List, Dict, Tuple, Optional, Any
 import numpy as np
-from coords import quat_zup_to_yup, normalize_quat
+from coords import quat_zup_to_yup, normalize_quat, vec3_zup_to_yup
 
 
 # ─── GLB Binary Layout ───────────────────────────────────────────
@@ -346,20 +346,93 @@ class GLBBuilder:
         return primitive
 
     def add_inverse_bind_matrices(self, bones: List[Any]) -> int:
-        """Compute and pack inverse bind matrices for skinning."""
-        # For a simple skeleton where bones have local transforms,
-        # we compute the inverse bind matrix as the inverse of the world transform.
-        # For GF, we use identity matrices since the mesh vertices are already
-        # in the correct local space for each bone.
+        """Compute and pack correct inverse bind matrices for skinning from the bone hierarchy."""
+        # Helper to convert translation and quaternion to 4x4 column-major matrix
+        def compose_mat4(pos, rot):
+            qx, qy, qz, qw = rot
+            tx, ty, tz = pos
+            
+            xx, xy, xz = qx*qx, qx*qy, qx*qz
+            yy, yz, zz = qy*qy, qy*qz, qz*qz
+            wx, wy, wz = qw*qx, qw*qy, qw*qz
+            
+            m0 = 1.0 - 2.0 * (yy + zz)
+            m1 = 2.0 * (xy + wz)
+            m2 = 2.0 * (xz - wy)
+            
+            m4 = 2.0 * (xy - wz)
+            m5 = 1.0 - 2.0 * (xx + zz)
+            m6 = 2.0 * (yz + wx)
+            
+            m8 = 2.0 * (xz + wy)
+            m9 = 2.0 * (yz - wx)
+            m10 = 1.0 - 2.0 * (xx + yy)
+            
+            return [
+                m0, m1, m2, 0.0,
+                m4, m5, m6, 0.0,
+                m8, m9, m10, 0.0,
+                tx, ty, tz, 1.0
+            ]
+
+        def mat4_mul(A, B):
+            C = [0.0] * 16
+            for col in range(4):
+                for row in range(4):
+                    val = 0.0
+                    for k in range(4):
+                        val += A[k * 4 + row] * B[col * 4 + k]
+                    C[col * 4 + row] = val
+            return C
+
+        def mat4_inv(M):
+            # Transposed rotation part (column-major)
+            r00, r10, r20 = M[0], M[1], M[2]
+            r01, r11, r21 = M[4], M[5], M[6]
+            r02, r12, r22 = M[8], M[9], M[10]
+            tx, ty, tz = M[12], M[13], M[14]
+            
+            ir00, ir10, ir20 = r00, r01, r02
+            ir01, ir11, ir21 = r10, r11, r12
+            ir02, ir12, ir22 = r20, r21, r22
+            
+            # Translation part ( -R^T * T )
+            itx = -(ir00 * tx + ir01 * ty + ir02 * tz)
+            ity = -(ir10 * tx + ir11 * ty + ir12 * tz)
+            itz = -(ir20 * tx + ir21 * ty + ir22 * tz)
+            
+            return [
+                ir00, ir10, ir20, 0.0,
+                ir01, ir11, ir21, 0.0,
+                ir02, ir12, ir22, 0.0,
+                itx, ity, itz, 1.0
+            ]
+
+        # Compute world transforms for all bones
+        world_transforms = [None] * len(bones)
+        
+        def get_world_transform(i):
+            if world_transforms[i] is not None:
+                return world_transforms[i]
+            
+            bone = bones[i]
+            local_m = compose_mat4(bone.local_position, bone.local_rotation)
+            
+            if bone.parent_index < 0:
+                world_transforms[i] = local_m
+            else:
+                parent_m = get_world_transform(bone.parent_index)
+                world_transforms[i] = mat4_mul(parent_m, local_m)
+            return world_transforms[i]
+
+        for i in range(len(bones)):
+            get_world_transform(i)
+
+        # Invert all world transforms to get Inverse Bind Matrices
         ibm_flat = []
-        for bone in bones:
-            # Identity matrix (column-major)
-            ibm_flat.extend([
-                1.0, 0.0, 0.0, 0.0,
-                0.0, 1.0, 0.0, 0.0,
-                0.0, 0.0, 1.0, 0.0,
-                0.0, 0.0, 0.0, 1.0,
-            ])
+        for i in range(len(bones)):
+            inv_m = mat4_inv(world_transforms[i])
+            ibm_flat.extend(inv_m)
 
         offset = self.buf.pack_floats(ibm_flat)
         view = self.buf.add_view(offset, len(ibm_flat) * 4, 0)
@@ -374,50 +447,38 @@ class GLBBuilder:
 
         gltf_anim = {'name': name, 'channels': [], 'samplers': []}
 
-        # Collect all frame times
-        all_frames = set()
-        for track in clip.tracks.values():
-            for kf in track.keyframes:
-                all_frames.add(kf.frame)
-        sorted_frames = sorted(all_frames)
-
-        if not sorted_frames:
-            return
-
-        # Time accessor (in seconds, assuming 60fps GF tick rate)
-        # GF animations use frame indices; convert to seconds
-        fps = 60.0
-        times = [f / fps for f in sorted_frames]
-        time_offset = self.buf.pack_floats(times)
-        time_view = self.buf.add_view(time_offset, len(times) * 4, 0)
-        time_acc = self.buf.add_accessor(time_view, FLOAT, len(times), 'SCALAR',
-                                          min_vals=[times[0]], max_vals=[times[-1]])
-
         # For each bone that has animation data
         for bone_name in skeleton_bones:
             if bone_name not in clip.tracks:
                 continue
 
             track = clip.tracks[bone_name]
+            if not track.keyframes:
+                continue
+
             bone_idx = skeleton_bones.index(bone_name)
             node_idx = bone_node_indices[bone_idx]
 
-            # Build keyframe data aligned with sorted_frames
-            kf_map = {kf.frame: kf for kf in track.keyframes}
+            sorted_keyframes = sorted(track.keyframes, key=lambda kf: kf.frame)
+            fps = 60.0
+            times = [kf.frame / fps for kf in sorted_keyframes]
+            time_offset = self.buf.pack_floats(times)
+            time_view = self.buf.add_view(time_offset, len(times) * 4, 0)
+            time_acc = self.buf.add_accessor(time_view, FLOAT, len(times), 'SCALAR',
+                                             min_vals=[times[0]], max_vals=[times[-1]])
 
             if bone_name == 'player':
                 # Translation channel
                 translations = []
-                for f in sorted_frames:
-                    kf = kf_map.get(f)
-                    if kf and kf.position:
-                        translations.extend(kf.position)
+                for kf in sorted_keyframes:
+                    if kf.position:
+                        translations.extend(vec3_zup_to_yup(kf.position))
                     else:
                         translations.extend([0.0, 0.0, 0.0])
 
                 trans_offset = self.buf.pack_floats(translations)
                 trans_view = self.buf.add_view(trans_offset, len(translations) * 4, 0)
-                trans_acc = self.buf.add_accessor(trans_view, FLOAT, len(sorted_frames), 'VEC3')
+                trans_acc = self.buf.add_accessor(trans_view, FLOAT, len(sorted_keyframes), 'VEC3')
 
                 sampler = {'input': time_acc, 'output': trans_acc, 'interpolation': 'LINEAR'}
                 gltf_anim['samplers'].append(sampler)
@@ -428,19 +489,14 @@ class GLBBuilder:
             else:
                 # Rotation channel
                 rotations = []
-                for f in sorted_frames:
-                    kf = kf_map.get(f)
-                    if kf:
-                        # Convert quaternion from Z-up to Y-up
-                        q = quat_zup_to_yup(kf.rotation)
-                        q = normalize_quat(q)
-                        rotations.extend(q)
-                    else:
-                        rotations.extend([0.0, 0.0, 0.0, 1.0])
+                for kf in sorted_keyframes:
+                    q = quat_zup_to_yup(kf.rotation)
+                    q = normalize_quat(q)
+                    rotations.extend(q)
 
                 rot_offset = self.buf.pack_floats(rotations)
                 rot_view = self.buf.add_view(rot_offset, len(rotations) * 4, 0)
-                rot_acc = self.buf.add_accessor(rot_view, FLOAT, len(sorted_frames), 'VEC4')
+                rot_acc = self.buf.add_accessor(rot_view, FLOAT, len(sorted_keyframes), 'VEC4')
 
                 sampler = {'input': time_acc, 'output': rot_acc, 'interpolation': 'LINEAR'}
                 gltf_anim['samplers'].append(sampler)

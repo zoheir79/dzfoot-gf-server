@@ -1,0 +1,44 @@
+{
+  "exported": [
+    {
+      "source_object": "balls/generic.object",
+      "output_glb": "static/balls/generic.glb",
+      "geometry_count": 1,
+      "size_kb": 20.0
+    },
+    {
+      "source_object": "players/fullbody.object",
+      "output_glb": "static/players/fullbody.glb",
+      "geometry_count": 1,
+      "size_kb": 26.7
+    },
+    {
+      "source_object": "players/fullbody2.object",
+      "output_glb": "static/players/fullbody2.glb",
+      "geometry_count": 1,
+      "size_kb": 26.7
+    },
+    {
+      "source_object": "stadiums/goals.object",
+      "output_glb": "static/stadiums/goals.glb",
+      "geometry_count": 1,
+      "size_kb": 118.5
+    },
+    {
+      "source_object": "stadiums/test/pitchonly.object",
+      "output_glb": "static/stadiums/test/pitchonly.glb",
+      "geometry_count": 1,
+      "size_kb": 6.8
+    },
+    {
+      "source_object": "stadiums/test/test.object",
+      "output_glb": "static/stadiums/test/test.glb",
+      "geometry_count": 2,
+      "size_kb": 1491.9
+    }
+  ],
+  "skipped": [
+    "lighting\\generic.object",
+    "players\\player.object"
+  ]
+}
