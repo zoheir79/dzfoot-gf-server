@@ -331,7 +331,7 @@ void Server::tick() {
         currentState_.ball.ownedTeam = static_cast<int8_t>(info.ball_owned_team);
         currentState_.ball.ownedPlayer = static_cast<int8_t>(info.ball_owned_player);
         currentState_.gameMode = static_cast<uint8_t>(info.game_mode);
-        currentState_.flags = (info.is_in_play ? 1 : 0);
+        currentState_.gameFlags = (info.is_in_play ? 1 : 0);
 
         // Try to get real ball velocity & rotation from internal Ball object
         Match* match = gameEnv_->context->gameTask->GetMatch();
