@@ -150,35 +150,42 @@ def parse_all_animations(anim_dir: str) -> Dict[str, AnimClip]:
 # Mapping from GF animation types/paths to Android anim_id
 ANIM_TYPE_TO_ID = {
     'movement': {
-        'idle': 0,
-        'walk': 1,
-        'dribble': 9,
-        'sprint': 3,
-        'run': 2,
+        'idle': 0,      # ANIM_IDLE
+        'walk': 1,      # ANIM_WALK
+        'run': 2,       # ANIM_RUN
+        'sprint': 3,    # ANIM_SPRINT
+        'dribble': 10,  # ANIM_DRIBBLE
     },
-    'shot': 4,       # shoot_r (mirror for shoot_l = 5)
-    'pass': 6,       # pass_short
-    'longpass': 7,   # pass_long
-    'highpass': 7,
-    'sliding': 8,    # tackle
-    'trip': 14,      # fall
-    'deflect': 15,   # header
-    'catch': 13,     # gk_catch
-    'interfere': 14,
-    'special': 10,   # celebrate
-    'ballcontrol': 9,  # dribble
-    'trap': 9,
+    'shot': 4,          # ANIM_SHOOT_R (mirror for shoot_l = 5)
+    'pass': 6,          # ANIM_PASS_S
+    'longpass': 7,      # ANIM_PASS_L
+    'highpass': 7,      # ANIM_PASS_L
+    'sliding': 9,       # ANIM_TACKLE
+    'trip': 11,         # ANIM_FALL
+    'deflect': 8,       # ANIM_HEADER
+    'catch': 16,        # ANIM_GK_CATCH
+    'interfere': 9,     # ANIM_TACKLE
+    'special': 12,      # ANIM_CELEBRATE
+    'ballcontrol': 10,  # ANIM_DRIBBLE
+    'trap': 10,         # ANIM_DRIBBLE
 }
 
 
 def classify_animation(clip: AnimClip, filepath: str) -> int:
-    """Map a GF animation to Android anim_id (0-15)."""
+    """Map a GF animation to Android anim_id (0-16)."""
     atype = clip.anim_type.lower()
     fname = os.path.basename(filepath).lower()
 
-    # Check for goalkeeper-specific
+    # Check for goalkeeper-specific first
     if 'catch' in atype or 'catch' in fname:
-        return 13  # gk_catch
+        return 16  # ANIM_GK_CATCH
+
+    if 'dive_l' in fname or 'divel' in fname:
+        return 14  # ANIM_GK_DIVE_L
+    if 'dive_r' in fname or 'diver' in fname:
+        return 15  # ANIM_GK_DIVE_R
+    if 'gk_idle' in fname or 'gkidle' in fname:
+        return 13  # ANIM_GK_IDLE
 
     if atype == 'movement':
         # Determine velocity from metadata or filename
@@ -186,54 +193,56 @@ def classify_animation(clip: AnimClip, filepath: str) -> int:
         path_lower = filepath.lower()
 
         if 'idle' in path_lower:
-            return 0
+            return 0  # ANIM_IDLE
         elif 'sprint' in path_lower:
-            return 3
+            return 3  # ANIM_SPRINT
         elif 'dribble' in path_lower:
-            return 9
+            return 10  # ANIM_DRIBBLE
         elif 'walk' in path_lower:
-            return 1
+            return 1  # ANIM_WALK
+        elif 'run' in path_lower:
+            return 2  # ANIM_RUN
         else:
             # Default based on velocity
             try:
                 vel = float(velocity)
                 if vel < 1.0:
                     return 0
-                elif vel < 4.0:
-                    return 9
-                elif vel < 6.0:
+                elif vel < 2.5:
                     return 1
+                elif vel < 4.5:
+                    return 2
                 else:
                     return 3
             except ValueError:
                 return 0
 
     mapping = {
-        'shot': 4,
-        'pass': 6,
-        'shortpass': 6,
-        'longpass': 7,
-        'highpass': 7,
-        'sliding': 8,
-        'trip': 14,
-        'deflect': 15,
-        'header': 15,
-        'catch': 13,
-        'interfere': 14,
-        'special': 10,
-        'celebration': 10,
-        'ballcontrol': 9,
-        'trap': 9,
+        'shot': 4,          # ANIM_SHOOT_R (mirror handles L)
+        'pass': 6,          # ANIM_PASS_S
+        'shortpass': 6,     # ANIM_PASS_S
+        'longpass': 7,      # ANIM_PASS_L
+        'highpass': 7,      # ANIM_PASS_L
+        'sliding': 9,       # ANIM_TACKLE
+        'trip': 11,         # ANIM_FALL
+        'deflect': 8,       # ANIM_HEADER
+        'header': 8,        # ANIM_HEADER
+        'catch': 16,        # ANIM_GK_CATCH
+        'interfere': 9,     # ANIM_TACKLE
+        'special': 12,      # ANIM_CELEBRATE
+        'celebration': 12,  # ANIM_CELEBRATE
+        'ballcontrol': 10,  # ANIM_DRIBBLE
+        'trap': 10,         # ANIM_DRIBBLE
     }
 
     return mapping.get(atype, 0)
 
 
 def select_best_animations(animations: Dict[str, AnimClip]) -> Dict[int, AnimClip]:
-    """Select the best animation for each Android anim_id (0-15).
+    """Select the best animation for each Android anim_id (0-16).
     Picks the animation with the most keyframes for each type.
     """
-    candidates = {i: [] for i in range(16)}
+    candidates = {i: [] for i in range(17)}
 
     for path, clip in animations.items():
         anim_id = classify_animation(clip, path)

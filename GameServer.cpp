@@ -354,7 +354,7 @@ void Server::tick() {
                 int idx = baseIdx + static_cast<int>(i);
                 if (idx >= kMaxPlayers) break;
                 const PlayerInfo& pi = src[i];
-                GameState::PlayerState& ps = currentState_.players[idx];
+                NetworkPlayerState& ps = currentState_.players[idx];
                 ps.pos[0] = pi.player_position.env_coord(0);
                 ps.pos[1] = pi.player_position.env_coord(1);
                 ps.pos[2] = pi.player_position.env_coord(2);
@@ -397,7 +397,7 @@ void Server::tick() {
                     ps.vel[1] = 0.0f;
                     ps.vel[2] = 0.0f;
                 } else {
-                    GameState::PlayerState& prev = previousState_.players[idx];
+                    NetworkPlayerState& prev = previousState_.players[idx];
                     ps.vel[0] = ps.pos[0] - prev.pos[0];
                     ps.vel[1] = ps.pos[1] - prev.pos[1];
                     ps.vel[2] = ps.pos[2] - prev.pos[2];
@@ -423,9 +423,9 @@ void Server::tick() {
 
             if (!prevCard && curCard) {
                 MatchEvent ev{};
-                ev.event_type = EVENT_YELLOW_CARD;
+                ev.eventType = EVENT_YELLOW_CARD;
                 ev.team = team;
-                ev.player_idx = static_cast<uint8_t>(idx);
+                ev.playerIdx = static_cast<uint8_t>(idx);
                 ev.pos[0] = currentState_.players[idx].pos[0];
                 ev.pos[1] = currentState_.players[idx].pos[1];
                 ev.pos[2] = currentState_.players[idx].pos[2];
@@ -438,9 +438,9 @@ void Server::tick() {
             // Red card = player was active and now inactive (and not at init)
             if (prevActive && !curActive && previousState_.tick > 0) {
                 MatchEvent ev{};
-                ev.event_type = EVENT_RED_CARD;
+                ev.eventType = EVENT_RED_CARD;
                 ev.team = team;
-                ev.player_idx = static_cast<uint8_t>(idx);
+                ev.playerIdx = static_cast<uint8_t>(idx);
                 ev.pos[0] = currentState_.players[idx].pos[0];
                 ev.pos[1] = currentState_.players[idx].pos[1];
                 ev.pos[2] = currentState_.players[idx].pos[2];
@@ -474,9 +474,9 @@ void Server::tick() {
         if (info.left_goals > lastScoreA_) {
             resolveShotsOnGoal(0, info.ball_owned_player);
             MatchEvent ev;
-            ev.event_type = EVENT_GOAL;
+            ev.eventType = EVENT_GOAL;
             ev.team = 0;
-            ev.player_idx = static_cast<uint8_t>(info.ball_owned_player);
+            ev.playerIdx = static_cast<uint8_t>(info.ball_owned_player);
             ev.pos[0] = currentState_.ball.pos[0];
             ev.pos[1] = currentState_.ball.pos[1];
             ev.pos[2] = currentState_.ball.pos[2];
@@ -490,9 +490,9 @@ void Server::tick() {
         if (info.right_goals > lastScoreB_) {
             resolveShotsOnGoal(1, info.ball_owned_player);
             MatchEvent ev;
-            ev.event_type = EVENT_GOAL;
+            ev.eventType = EVENT_GOAL;
             ev.team = 1;
-            ev.player_idx = static_cast<uint8_t>(info.ball_owned_player);
+            ev.playerIdx = static_cast<uint8_t>(info.ball_owned_player);
             ev.pos[0] = currentState_.ball.pos[0];
             ev.pos[1] = currentState_.ball.pos[1];
             ev.pos[2] = currentState_.ball.pos[2];
@@ -505,8 +505,7 @@ void Server::tick() {
         }
 
         // Game mode transitions -> events
-        static uint8_t lastGameMode = 255;
-        if (lastGameMode != static_cast<uint8_t>(info.game_mode)) {
+        if (lastGameMode_ != static_cast<uint8_t>(info.game_mode)) {
             EventType et = EVENT_KICK_OFF;
             switch (info.game_mode) {
                 case e_GameMode_KickOff:   et = EVENT_KICK_OFF; break;
@@ -519,9 +518,9 @@ void Server::tick() {
             }
             if (info.game_mode != e_GameMode_Normal) {
                 MatchEvent ev;
-                ev.event_type = static_cast<uint8_t>(et);
+                ev.eventType = et;
                 ev.team = 0;
-                ev.player_idx = 0;
+                ev.playerIdx = 0;
                 ev.pos[0] = currentState_.ball.pos[0];
                 ev.pos[1] = currentState_.ball.pos[1];
                 ev.pos[2] = currentState_.ball.pos[2];
@@ -530,15 +529,15 @@ void Server::tick() {
                 ev.score[1] = static_cast<uint8_t>(info.right_goals);
                 eventQueue_.push_back(ev);
             }
-            lastGameMode = static_cast<uint8_t>(info.game_mode);
+            lastGameMode_ = static_cast<uint8_t>(info.game_mode);
         }
 
         // Half time (once, when the timer crosses duration / 2)
         if (!halfTimeSent_ && currentState_.timer >= cfg_.duration * 0.5f) {
             MatchEvent ev{};
-            ev.event_type = EVENT_HALF_TIME;
+            ev.eventType = EVENT_HALF_TIME;
             ev.team = 0;
-            ev.player_idx = 0;
+            ev.playerIdx = 0;
             ev.pos[0] = 0; ev.pos[1] = 0; ev.pos[2] = 0;
             ev.tick = tickCounter_;
             ev.score[0] = static_cast<uint8_t>(info.left_goals);
@@ -551,9 +550,9 @@ void Server::tick() {
         // End of match
         if (currentState_.timer >= cfg_.duration) {
             MatchEvent ev;
-            ev.event_type = EVENT_END_MATCH;
+            ev.eventType = EVENT_END_MATCH;
             ev.team = 0;
-            ev.player_idx = 0;
+            ev.playerIdx = 0;
             ev.pos[0] = 0; ev.pos[1] = 0; ev.pos[2] = 0;
             ev.tick = tickCounter_;
             ev.score[0] = static_cast<uint8_t>(info.left_goals);
@@ -683,6 +682,13 @@ float Server::getHeadingFromDir(float dx, float dz) const {
 void Server::broadcastGameState() {
     if (!cfg_.redis || !cfg_.redis->isConfigured()) return;
 
+    // Fill protocol header before broadcast
+    currentState_.header.magic   = dzfoot::DZ_MAGIC;
+    currentState_.header.version = dzfoot::DZ_PROTOCOL_VERSION;
+    currentState_.header.type    = dzfoot::PACKET_GAME_STATE;
+    currentState_.header.size    = static_cast<uint16_t>(sizeof(currentState_));
+    currentState_.header.flags   = 0;
+
     auto roomBytes = cfg_.roomId.substr(0, 36);
 
     // Prefix room_id (36 bytes) for backend routing
@@ -691,7 +697,12 @@ void Server::broadcastGameState() {
     std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
     cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
 
-    for (const auto& ev : eventQueue_) {
+    for (auto& ev : eventQueue_) {
+        ev.header.magic   = dzfoot::DZ_MAGIC;
+        ev.header.version = dzfoot::DZ_PROTOCOL_VERSION;
+        ev.header.type    = dzfoot::PACKET_MATCH_EVENT;
+        ev.header.size    = static_cast<uint16_t>(sizeof(ev));
+        ev.header.flags   = 0;
         std::vector<uint8_t> evBuf(36 + sizeof(ev));
         std::memcpy(evBuf.data(), roomBytes.c_str(), roomBytes.size());
         std::memcpy(evBuf.data() + 36, &ev, sizeof(ev));
@@ -700,7 +711,7 @@ void Server::broadcastGameState() {
     eventQueue_.clear();
 }
 
-void Server::receiveInput(const PlayerInput& input) {
+void Server::receiveInput(const PlayerInputPacket& input) {
     std::lock_guard<std::mutex> lock(inputMutex_);
     inputQueue_.push(input);
 }
@@ -732,10 +743,22 @@ void Server::applyPendingInputs() {
         }
         bool left_team = (inp.team == 0);
         int player = static_cast<int>(inp.playerIdx);
-        if (player < 0 || player > 10) player = 0; // safety clamp
+        if (player < 0 || player > 10) {
+            std::cerr << "[GameServer] Anti-cheat: rejected input with invalid playerIdx=" << player << std::endl;
+            continue;
+        }
 
         float dx = inp.dirX;
         float dz = inp.dirZ;
+        if (!std::isfinite(dx) || !std::isfinite(dz)) {
+            std::cerr << "[GameServer] Anti-cheat: rejected input with non-finite direction" << std::endl;
+            continue;
+        }
+        // Clamp and normalize handled by sanitizePlayerInput on client, re-validate here
+        if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
+        if (dz < -1.0f) dz = -1.0f; if (dz > 1.0f) dz = 1.0f;
+        float lenSq = dx*dx + dz*dz;
+        if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); dx *= inv; dz *= inv; }
 
         gameEnv_->action(game_release_direction, left_team, player);
 
@@ -754,29 +777,29 @@ void Server::applyPendingInputs() {
             else                                               gameEnv_->action(game_top_right, left_team, player);
         }
 
-        if (inp.pass)       gameEnv_->action(game_short_pass, left_team, player);
-        else                gameEnv_->action(game_release_short_pass, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_PASS)       gameEnv_->action(game_short_pass, left_team, player);
+        else                                           gameEnv_->action(game_release_short_pass, left_team, player);
 
-        if (inp.highPass)   gameEnv_->action(game_high_pass, left_team, player);
-        else                gameEnv_->action(game_release_high_pass, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_HIGH_PASS)   gameEnv_->action(game_high_pass, left_team, player);
+        else                                            gameEnv_->action(game_release_high_pass, left_team, player);
 
-        if (inp.shot)       gameEnv_->action(game_shot, left_team, player);
-        else                gameEnv_->action(game_release_shot, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_SHOT)       gameEnv_->action(game_shot, left_team, player);
+        else                                          gameEnv_->action(game_release_shot, left_team, player);
 
-        if (inp.sliding)    gameEnv_->action(game_sliding, left_team, player);
-        else                gameEnv_->action(game_release_sliding, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_SLIDING)    gameEnv_->action(game_sliding, left_team, player);
+        else                                          gameEnv_->action(game_release_sliding, left_team, player);
 
-        if (inp.dribble)    gameEnv_->action(game_dribble, left_team, player);
-        else                gameEnv_->action(game_release_dribble, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    gameEnv_->action(game_dribble, left_team, player);
+        else                                          gameEnv_->action(game_release_dribble, left_team, player);
 
-        if (inp.sprint)     gameEnv_->action(game_sprint, left_team, player);
-        else                gameEnv_->action(game_release_sprint, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_SPRINT)     gameEnv_->action(game_sprint, left_team, player);
+        else                                          gameEnv_->action(game_release_sprint, left_team, player);
 
-        if (inp.switchPlayer) gameEnv_->action(game_switch, left_team, player);
-        else                  gameEnv_->action(game_release_switch, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_SWITCH_PLAYER) gameEnv_->action(game_switch, left_team, player);
+        else                                             gameEnv_->action(game_release_switch, left_team, player);
 
-        if (inp.kick)       gameEnv_->action(game_long_pass, left_team, player);
-        else                gameEnv_->action(game_release_long_pass, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_KICK)       gameEnv_->action(game_long_pass, left_team, player);
+        else                                          gameEnv_->action(game_release_long_pass, left_team, player);
     }
 }
 

@@ -220,44 +220,44 @@ def generate_hair_mesh(style: str = "short") -> Tuple[List, List, Tuple]:
         return [], [], (0, 0, 0)
 
     if style == 'short':
-        # Slightly flattened sphere on top of head
-        verts, faces = create_ellipsoid(0.10, 0.08, 0.10, segments=10, rings=6,
-                                        center=(0, 0.10, 0))
-        return verts, faces, (0, 0.10, 0)
+        # Cap on dome, thick enough to be visible
+        verts, faces = create_ellipsoid(0.055, 0.030, 0.050, segments=10, rings=6,
+                                        center=(0, 0.270, 0.000))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'long':
-        # Taller ellipsoid
-        verts, faces = create_ellipsoid(0.09, 0.14, 0.09, segments=10, rings=8,
-                                        center=(0, 0.06, 0))
-        return verts, faces, (0, 0.06, 0)
+        # Longer cap down the back
+        verts, faces = create_ellipsoid(0.055, 0.075, 0.050, segments=10, rings=8,
+                                        center=(0, 0.225, -0.010))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'mohawk':
-        verts, faces = create_ridge(0.04, 0.16, 0.18, center=(0, 0.10, 0))
-        return verts, faces, (0, 0.10, 0)
+        # Narrow ridge on top
+        verts, faces = create_ridge(0.022, 0.070, 0.120, center=(0, 0.275, 0.000))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'curly':
-        # Bigger sphere
-        verts, faces = create_sphere(0.12, segments=10, rings=8,
-                                     center=(0, 0.08, 0))
-        return verts, faces, (0, 0.08, 0)
+        # Sphere on top
+        verts, faces = create_sphere(0.058, segments=10, rings=8,
+                                     center=(0, 0.255, 0.000))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'ponytail':
-        # Short on top + cylinder in back
-        top_verts, top_faces = create_ellipsoid(0.09, 0.07, 0.09, segments=8, rings=5,
-                                                center=(0, 0.10, 0))
-        tail_verts, tail_faces = create_cylinder(0.03, 0.20, segments=6,
-                                                  center=(0, -0.05, 0))
-        # Merge
+        # Cap + tail
+        top_verts, top_faces = create_ellipsoid(0.052, 0.030, 0.048, segments=8, rings=5,
+                                                center=(0, 0.255, 0.000))
+        tail_verts, tail_faces = create_cylinder(0.018, 0.100, segments=6,
+                                                  center=(0, 0.180, -0.045))
         offset = len(top_verts)
         all_verts = top_verts + tail_verts
         all_faces = top_faces + [(f[0] + offset, f[1] + offset, f[2] + offset)
                                  for f in tail_faces]
-        return all_verts, all_faces, (0, 0.10, 0)
+        return all_verts, all_faces, (0, 0, 0)
 
     # Default: short
-    verts, faces = create_ellipsoid(0.10, 0.08, 0.10, segments=10, rings=6,
-                                    center=(0, 0.10, 0))
-    return verts, faces, (0, 0.10, 0)
+    verts, faces = create_ellipsoid(0.055, 0.030, 0.050, segments=10, rings=6,
+                                    center=(0, 0.270, 0.000))
+    return verts, faces, (0, 0, 0)
 
 
 def generate_beard_mesh(style: str = "none") -> Tuple[List, List, Tuple]:
@@ -269,82 +269,80 @@ def generate_beard_mesh(style: str = "none") -> Tuple[List, List, Tuple]:
         return [], [], (0, 0, 0)
 
     if style == 'stubble':
-        # Very thin layer on chin
-        verts, faces = create_ellipsoid(0.06, 0.03, 0.04, segments=6, rings=4,
-                                        center=(0, -0.08, -0.02))
-        return verts, faces, (0, -0.08, -0.02)
+        # Thin layer on chin
+        verts, faces = create_ellipsoid(0.020, 0.007, 0.010, segments=6, rings=4,
+                                        center=(0, 0.066, 0.088))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'short':
-        verts, faces = create_ellipsoid(0.07, 0.05, 0.05, segments=8, rings=5,
-                                        center=(0, -0.09, -0.02))
-        return verts, faces, (0, -0.09, -0.02)
+        # Small beard on chin
+        verts, faces = create_ellipsoid(0.028, 0.018, 0.016, segments=8, rings=5,
+                                        center=(0, 0.060, 0.088))
+        return verts, faces, (0, 0, 0)
 
     elif style == 'full':
-        verts, faces = create_ellipsoid(0.08, 0.07, 0.06, segments=10, rings=6,
-                                        center=(0, -0.10, -0.02))
-        return verts, faces, (0, -0.10, -0.02)
+        # Full beard
+        verts, faces = create_ellipsoid(0.040, 0.028, 0.022, segments=10, rings=6,
+                                        center=(0, 0.054, 0.086))
+        return verts, faces, (0, 0, 0)
 
     return [], [], (0, 0, 0)
 
 
 def _build_ear_mesh(sign: float) -> Tuple[List, List]:
-    """Build a single realistic ear mesh on one side. sign=-1 for left, +1 for right."""
+    """Build a flat realistic ear mesh. sign=-1 for left, +1 for right.
+
+    The ear is a very thin, slightly curved oval disc pressed against the
+    side of the head.  It is ~0.06 m tall, ~0.035 m wide, and only ~0.004 m
+    thick so it never looks like a bulky cylinder.
+    """
     verts = []
     faces = []
-    # Ear profile outline in YZ plane (side view), X is thickness axis
-    # Profile points: (y_up, z_forward, x_thickness)
-    # We build concentric rings from outer helix to inner concha
-    N_RINGS = 6   # radial steps (helix -> antihelix -> concha -> depth)
-    N_SEGMENTS = 16  # angular steps around the ear profile
 
-    # Ear center position on head
-    cx, cy, cz = sign * 0.085, 0.16, 0.0
+    N_RINGS = 4
+    N_SEGS = 12
 
-    # Build a parametric ear shape: an oval tilted ~15 degrees
-    # The ear is roughly an ellipse 0.065 tall x 0.035 wide, tilted back
-    tilt = math.radians(10)  # slight backward tilt
-    cos_t = math.cos(tilt)
-    sin_t = math.sin(tilt)
+    # Ear centre on the side of the head (flush with surface)
+    cx = sign * 0.084
+    cy = 0.142
+    cz = 0.028
 
     for ring in range(N_RINGS):
-        t = ring / (N_RINGS - 1)  # 0 = outer helix edge, 1 = deepest concha
-        # Thickness: outer ring sticks out most, inner rings recess
-        thickness = 0.028 * (1.0 - t)  # 0.028 at helix, 0 at deepest
-        # Radius of this ring (ear gets slightly smaller as we go in)
-        ry = 0.032 - t * 0.006  # vertical radius
-        rz = 0.018 - t * 0.004  # depth radius
+        t = ring / (N_RINGS - 1)  # 0 = outer rim, 1 = inner/back
+        # Thickness falls to almost zero at the back
+        thickness = 0.003 * (1.0 - t)
+        # Oval radii shrink a little toward the back
+        ry = 0.023 - t * 0.004
+        rz = 0.012 - t * 0.002
 
-        for seg in range(N_SEGMENTS):
-            angle = 2.0 * math.pi * seg / N_SEGMENTS
-            # Base ellipse in YZ
+        for seg in range(N_SEGS):
+            angle = 2.0 * math.pi * seg / N_SEGS
             ly = ry * math.cos(angle)
             lz = rz * math.sin(angle)
-            # Apply tilt
-            y_local = ly * cos_t - lz * sin_t
-            z_local = ly * sin_t + lz * cos_t
-            # Add thickness in X
-            x_local = thickness * (0.6 + 0.4 * abs(math.cos(angle)))
-
+            # Very slight backward tilt so the ear follows the head curvature
+            y_local = ly * 0.985 - lz * 0.174
+            z_local = ly * 0.174 + lz * 0.985
+            x_local = thickness
             verts.append((cx + x_local * sign, cy + y_local, cz + z_local))
 
-    # Build faces between rings
+    # Faces between rings
     for ring in range(N_RINGS - 1):
-        for seg in range(N_SEGMENTS):
-            a = ring * N_SEGMENTS + seg
-            b = ring * N_SEGMENTS + (seg + 1) % N_SEGMENTS
-            c = (ring + 1) * N_SEGMENTS + seg
-            d = (ring + 1) * N_SEGMENTS + (seg + 1) % N_SEGMENTS
+        for seg in range(N_SEGS):
+            a = ring * N_SEGS + seg
+            b = ring * N_SEGS + (seg + 1) % N_SEGS
+            c = (ring + 1) * N_SEGS + seg
+            d = (ring + 1) * N_SEGS + (seg + 1) % N_SEGS
             faces.append((a, b, d))
             faces.append((a, d, c))
 
-    # Add a back cap (flat disc at deepest ring) to close the ear
-    cap_center = len(verts)
+    # Close the back with a tiny fan (inner ring -> centre point)
+    back_centre = len(verts)
     verts.append((cx, cy, cz))
-    last_ring_start = (N_RINGS - 1) * N_SEGMENTS
-    for seg in range(N_SEGMENTS):
-        a = last_ring_start + seg
-        b = last_ring_start + (seg + 1) % N_SEGMENTS
-        faces.append((b, a, cap_center))
+    inner_start = (N_RINGS - 1) * N_SEGS
+    for seg in range(N_SEGS):
+        a = inner_start + seg
+        b = inner_start + (seg + 1) % N_SEGS
+        faces.append((b, a, back_centre))
 
     return verts, faces
 
@@ -393,19 +391,19 @@ def _build_nose() -> Tuple[List, List]:
     N_SEG = 12  # angular resolution
     N_RING = 8  # vertical rings from bridge to base
 
-    # Nose base position (on face surface)
-    bx, by, bz = 0.0, 0.14, -0.075
+    # Nose base position on outer dome of face
+    bx, by, bz = 0.0, 0.14, 0.10
 
     for ring in range(N_RING):
         t = ring / (N_RING - 1)  # 0 = bridge top, 1 = nostril base
         # Height along nose
         y = by + t * 0.04  # nose is ~4cm tall
-        # Forward protrusion: peaks at middle, tapers at bridge and base
-        protrusion = 0.022 * math.sin(t * math.pi)  # max 2.2cm at mid-nose
+        # Forward protrusion: small bump
+        protrusion = 0.010 * math.sin(t * math.pi)  # max 1cm at mid-nose
         # Width: narrow at bridge, wide at alae
-        width = 0.012 + t * 0.016  # 1.2cm at bridge, 2.8cm at base
-        # Z offset: nose sits forward of face
-        z_center = bz - protrusion
+        width = 0.008 + t * 0.010  # 0.8cm at bridge, 1.8cm at base
+        # Z offset: nose protrudes outward from dome
+        z_center = bz + protrusion
 
         for seg in range(N_SEG):
             angle = 2.0 * math.pi * seg / N_SEG
@@ -459,15 +457,15 @@ def _build_eye(sign: float) -> Tuple[List, List]:
     N_SEG = 14
     N_RING = 5
 
-    # Eye position
-    ex, ey, ez = sign * 0.038, 0.18, -0.072
+    # Eye position on outer dome of face
+    ex, ey, ez = sign * 0.035, 0.17, 0.09
 
     for ring in range(N_RING):
         t = ring / (N_RING - 1)  # 0 = back of eye, 1 = front (cornea)
-        # Eye is a flattened sphere, ~2.4cm wide x 1.2cm tall x 1.0cm deep
-        rx = 0.012 * (1.0 - abs(t - 0.5) * 1.8)  # width
+        # Eye is a flattened sphere, ~2cm wide x 1.2cm tall
+        rx = 0.010 * (1.0 - abs(t - 0.5) * 1.8)  # width
         ry = 0.006 * (1.0 - abs(t - 0.5) * 1.8)  # height
-        rz = 0.005 * (t - 0.5)  # depth offset
+        rz = 0.006 * (t - 0.5)  # depth offset
 
         for seg in range(N_SEG):
             angle = 2.0 * math.pi * seg / N_SEG
@@ -521,16 +519,16 @@ def _build_mouth() -> Tuple[List, List]:
     N_SEG = 16
     N_RING = 4
 
-    # Mouth position
-    mx, my, mz = 0.0, 0.08, -0.072
+    # Mouth position on outer dome of face
+    mx, my, mz = 0.0, 0.07, 0.08
 
     for ring in range(N_RING):
         t = ring / (N_RING - 1)  # 0 = inner (mouth opening), 1 = outer lip edge
         # Lip width and height
-        rx = 0.025 + t * 0.006  # wider at outer edge
-        ry = 0.004 + t * 0.006  # taller at outer edge
+        rx = 0.022 + t * 0.006  # wider at outer edge
+        ry = 0.005 + t * 0.006  # taller at outer edge
         # Forward protrusion
-        prot = 0.006 * (1.0 - abs(t - 0.5) * 2.0)
+        prot = 0.008 * (1.0 - abs(t - 0.5) * 2.0)
 
         for seg in range(N_SEG):
             angle = 2.0 * math.pi * seg / N_SEG
@@ -630,8 +628,42 @@ EYE_COLORS = {
 }
 
 
+def generate_face_plane() -> Tuple[List, List, List, List]:
+    """Generate a flat face decal plane with planar UVs.
+
+    The quad is positioned just in front of the face dome so the
+    procedural face texture (eyes, nose, mouth) is visible only on the
+    front, never wrapping around the sides.
+    """
+    verts = [
+        (-0.032, 0.148, 0.121),
+        ( 0.032, 0.148, 0.121),
+        (-0.032, 0.212, 0.121),
+        ( 0.032, 0.212, 0.121),
+    ]
+    faces = [(0, 1, 2), (1, 3, 2)]
+    uvs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+    normals = [(0.0, 0.0, 1.0)] * 4
+    return verts, faces, uvs, normals
+
+
+def generate_beard_plane() -> Tuple[List, List, List, List]:
+    verts = [
+        (-0.032, 0.074, 0.123),
+        ( 0.032, 0.074, 0.123),
+        (-0.032, 0.136, 0.117),
+        ( 0.032, 0.136, 0.117),
+    ]
+    faces = [(0, 1, 2), (1, 3, 2)]
+    uvs = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)]
+    normals = [(0.0, 0.0, 1.0)] * 4
+    return verts, faces, uvs, normals
+
+
 def generate_face_texture(skin_tone: str = 'medium',
                           eye_color: str = 'brown',
+                          beard_style: str = 'none',
+                          beard_color: str = 'black',
                           resolution: int = 256) -> np.ndarray:
     """
     Generate a simple face texture with eyes, nose, and mouth painted on.
@@ -639,80 +671,140 @@ def generate_face_texture(skin_tone: str = 'medium',
     """
     base_color = SKIN_TONES.get(skin_tone, SKIN_TONES['medium'])
     eye_col = EYE_COLORS.get(eye_color, EYE_COLORS['brown'])
-
-    img = np.ones((resolution, resolution, 4), dtype=np.float32)
-    img[:, :, 0] = base_color[0]
-    img[:, :, 1] = base_color[1]
-    img[:, :, 2] = base_color[2]
-    img[:, :, 3] = 1.0
+    img = np.zeros((resolution, resolution, 4), dtype=np.float32)
 
     h, w = resolution, resolution
     cx, cy = w // 2, h // 2
 
-    # Eyes (two dark circles in upper half)
-    eye_y = int(h * 0.35)
-    left_eye_x = int(w * 0.35)
-    right_eye_x = int(w * 0.65)
-    eye_radius = int(w * 0.06)
+    eye_y = int(h * 0.46)
+    left_eye_x = int(w * 0.34)
+    right_eye_x = int(w * 0.66)
+    eye_rx = int(w * 0.070)
+    eye_ry = int(h * 0.040)
 
     for ex, ey_pos in [(left_eye_x, eye_y), (right_eye_x, eye_y)]:
-        for y in range(max(0, ey_pos - eye_radius), min(h, ey_pos + eye_radius)):
-            for x in range(max(0, ex - eye_radius), min(w, ex + eye_radius)):
-                dist = ((x - ex) ** 2 + (y - ey_pos) ** 2) ** 0.5
-                if dist < eye_radius:
-                    # White of eye
-                    if dist < eye_radius * 0.85:
-                        img[y, x, :3] = [1.0, 1.0, 1.0]
-                    # Iris
-                    if dist < eye_radius * 0.45:
-                        img[y, x, :3] = eye_col[:3]
-                    # Pupil
-                    if dist < eye_radius * 0.2:
-                        img[y, x, :3] = [0.05, 0.05, 0.05]
+        for y in range(max(0, ey_pos - eye_ry), min(h, ey_pos + eye_ry + 1)):
+            for x in range(max(0, ex - eye_rx), min(w, ex + eye_rx + 1)):
+                dx = (x - ex) / max(1, eye_rx)
+                dy = (y - ey_pos) / max(1, eye_ry)
+                dist = dx * dx + dy * dy
+                if dist < 1.0:
+                    shade = 0.18 + 0.22 * (1.0 - dist)
+                    img[y, x, :3] = [shade * eye_col[0], shade * eye_col[1], shade * eye_col[2]]
+                    img[y, x, 3] = max(img[y, x, 3], 0.85)
+                if dist < 0.08:
+                    img[y, x, :3] = [0.03, 0.03, 0.03]
+                    img[y, x, 3] = 0.95
 
-    # Eyebrows
-    brow_y = eye_y - int(h * 0.04)
+    lid_y = eye_y - int(eye_ry * 0.55)
     for ex in [left_eye_x, right_eye_x]:
-        for y in range(max(0, brow_y - 3), min(h, brow_y + 3)):
-            for x in range(max(0, ex - eye_radius), min(w, ex + eye_radius)):
-                img[y, x, :3] = [0.1, 0.08, 0.05]
+        for y in range(max(0, lid_y - 1), min(h, lid_y + 1)):
+            for x in range(max(0, ex - int(eye_rx * 1.15)), min(w, ex + int(eye_rx * 1.15))):
+                img[y, x, :3] = [0.16, 0.12, 0.09]
+                img[y, x, 3] = 0.75
 
-    # Nose (subtle shadow in center)
-    nose_y = int(h * 0.48)
-    nose_cy = nose_y
-    for y in range(max(0, nose_y - 15), min(h, nose_y + 15)):
-        for x in range(max(0, cx - 12), min(w, cx + 12)):
-            dist = ((x - cx) ** 2 + (y - nose_cy) ** 2) ** 0.5
-            if dist < 12:
-                factor = 1.0 - (dist / 12) * 0.15
-                img[y, x, :3] = [c * factor for c in base_color[:3]]
+    brow_y = eye_y - int(h * 0.11)
+    for ex in [left_eye_x, right_eye_x]:
+        for y in range(max(0, brow_y - 1), min(h, brow_y + 2)):
+            for x in range(max(0, ex - int(eye_rx * 1.10)), min(w, ex + int(eye_rx * 1.10))):
+                img[y, x, :3] = [0.15, 0.10, 0.08]
+                img[y, x, 3] = 0.70
 
-    # Nostrils
-    for nx_offset in [-6, 6]:
-        nx = cx + nx_offset
-        ny = nose_y + 8
-        for y in range(max(0, ny - 4), min(h, ny + 4)):
-            for x in range(max(0, nx - 4), min(w, nx + 4)):
-                dist = ((x - nx) ** 2 + (y - ny) ** 2) ** 0.5
-                if dist < 4:
-                    img[y, x, :3] = [0.15, 0.10, 0.08]
-
-    # Mouth
-    mouth_y = int(h * 0.62)
-    mouth_w = int(w * 0.18)
-    for y in range(max(0, mouth_y - 3), min(h, mouth_y + 3)):
-        for x in range(max(0, cx - mouth_w), min(w, cx + mouth_w)):
-            img[y, x, :3] = [0.55, 0.25, 0.25]  # lip color
-
-    # Slight cheek blush
-    for cheek_x in [int(w * 0.28), int(w * 0.72)]:
-        cheek_y = int(h * 0.50)
-        for y in range(max(0, cheek_y - 10), min(h, cheek_y + 10)):
-            for x in range(max(0, cheek_x - 8), min(w, cheek_x + 8)):
-                dist = ((x - cheek_x) ** 2 + (y - cheek_y) ** 2) ** 0.5
-                if dist < 8:
-                    factor = 1.0 - (dist / 8) * 0.3
-                    img[y, x, 0] = min(1.0, img[y, x, 0] * (1.0 + 0.15 * factor))
-                    img[y, x, 1] = img[y, x, 1] * (1.0 - 0.05 * factor)
+    nose_y0 = int(h * 0.64)
+    nose_y1 = int(h * 0.74)
+    for y in range(max(0, nose_y0), min(h, nose_y1)):
+        taper = 1.0 - abs((y - (nose_y0 + nose_y1) * 0.5) / max(1.0, (nose_y1 - nose_y0) * 0.5))
+        half_w = max(1, int(1 + 2 * taper))
+        for x in range(max(0, cx - half_w), min(w, cx + half_w + 1)):
+            img[y, x, :3] = [base_color[0] * 0.78, base_color[1] * 0.78, base_color[2] * 0.78]
+            img[y, x, 3] = max(img[y, x, 3], 0.10)
 
     return (img * 255).astype(np.uint8)
+
+
+def generate_beard_texture(skin_tone: str = 'medium',
+                           beard_style: str = 'none',
+                           beard_color: str = 'black',
+                           resolution: int = 256) -> np.ndarray:
+    base_color = SKIN_TONES.get(skin_tone, SKIN_TONES['medium'])
+    beard_col = HAIR_COLORS.get(beard_color, HAIR_COLORS['black'])
+    beard_rgb = [
+        base_color[0] * 0.40 + beard_col[0] * 0.60,
+        base_color[1] * 0.40 + beard_col[1] * 0.60,
+        base_color[2] * 0.40 + beard_col[2] * 0.60,
+    ]
+    img = np.zeros((resolution, resolution, 4), dtype=np.float32)
+    if beard_style == 'none':
+        return (img * 255).astype(np.uint8)
+
+    h, w = resolution, resolution
+    cx = w // 2
+    if beard_style == 'stubble':
+        center_y = int(h * 0.42)
+        rx = int(w * 0.30)
+        ry = int(h * 0.20)
+        alpha_scale = 0.06
+    elif beard_style == 'short':
+        center_y = int(h * 0.44)
+        rx = int(w * 0.33)
+        ry = int(h * 0.24)
+        alpha_scale = 0.11
+    else:
+        center_y = int(h * 0.46)
+        rx = int(w * 0.36)
+        ry = int(h * 0.28)
+        alpha_scale = 0.16
+
+    top_y = max(0, center_y - ry)
+    bottom_y = min(h, center_y + ry + 1)
+    left_x = max(0, cx - rx)
+    right_x = min(w, cx + rx + 1)
+    for y in range(top_y, bottom_y):
+        for x in range(left_x, right_x):
+            dx = (x - cx) / max(1, rx)
+            dy = (y - center_y) / max(1, ry)
+            jaw_center_y = center_y + ry * 0.10
+            jaw_dy = (y - jaw_center_y) / max(1, ry)
+            dist = dx * dx + jaw_dy * jaw_dy
+            if dist > 1.0 or y < center_y - ry * 0.55:
+                continue
+            side_falloff = max(0.0, 1.0 - abs(dx) ** 1.6)
+            vertical_falloff = max(0.0, 1.0 - abs(jaw_dy) ** 1.4)
+            chin_mask = max(0.0, 1.0 - abs((y - (center_y + ry * 0.30)) / max(1.0, ry * 0.95)))
+            alpha = alpha_scale * side_falloff * (0.35 + 0.65 * vertical_falloff) * (0.45 + 0.55 * chin_mask)
+            if abs(dx) < 0.14 and y < center_y + ry * 0.08:
+                continue
+            if beard_style == 'stubble' and y < center_y - ry * 0.05:
+                continue
+            if beard_style == 'stubble':
+                grain = ((x * 17 + y * 31) % 23) / 23.0
+                alpha *= 0.18 + 0.55 * grain
+            elif beard_style == 'short':
+                grain = ((x * 11 + y * 19) % 17) / 17.0
+                alpha *= 0.62 + 0.22 * grain
+            else:
+                grain = ((x * 7 + y * 13) % 9) / 9.0
+                alpha *= 0.74 + 0.16 * grain
+            alpha = min(0.24, max(0.0, alpha))
+            img[y, x, :3] = beard_rgb
+            img[y, x, 3] = max(img[y, x, 3], alpha)
+
+    return (img * 255).astype(np.uint8)
+
+
+def generate_skin_texture(skin_tone: str = 'medium',
+                          eye_color: str = 'brown',
+                          beard_style: str = 'none',
+                          beard_color: str = 'black',
+                          resolution: int = 512) -> np.ndarray:
+    """Return a flat skin-tone texture. No facial features are painted
+    because the head mesh UVs are too low-resolution to support readable
+    face details. Eyes / mouth will be handled geometrically if needed."""
+    base_color = SKIN_TONES.get(skin_tone, SKIN_TONES['medium'])
+    h, w = resolution, resolution
+    img = np.zeros((h, w, 4), dtype=np.float32)
+    img[:, :, 0] = base_color[0]
+    img[:, :, 1] = base_color[1]
+    img[:, :, 2] = base_color[2]
+    img[:, :, 3] = 1.0
+    return (np.clip(img, 0.0, 1.0) * 255).astype(np.uint8)

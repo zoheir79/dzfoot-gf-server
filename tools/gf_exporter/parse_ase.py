@@ -82,6 +82,8 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
 
         if '*GEOMOBJECT' in line:
             mesh = ASEMesh(name="")
+            tverts = []
+            tfaces = []
             i += 1
 
             # Find NODE_NAME
@@ -139,6 +141,7 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
             in_faces = False
             in_vertex_normals = False
             in_tverts = False
+            in_tfaces = False
             vertex_normals_temp = []
             brace_depth = 1  # we entered MESH {, so depth=1
 
@@ -191,6 +194,13 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
                     i += 1
                     continue
 
+                if '*MESH_TVERTLIST' in l:
+                    in_faces = False
+                    in_vertex_normals = False
+                    in_tverts = True
+                    i += 1
+                    continue
+
                 if in_vertex_normals and l.startswith('*MESH_VERTEXNORMAL'):
                     parts = l.split()
                     if len(parts) >= 5:
@@ -202,18 +212,12 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
                     i += 1
                     continue
 
-                if in_vertex_normals and '*MESH_TVERTLIST' in l:
-                    in_vertex_normals = False
-                    in_tverts = True
-                    i += 1
-                    continue
-
                 if in_tverts and l.startswith('*MESH_TVERT'):
                     parts = l.split()
                     if len(parts) >= 4:
                         try:
                             u, v = float(parts[2]), float(parts[3])
-                            mesh.uvs.append((u, v))
+                            tverts.append((u, v))
                         except ValueError:
                             pass
                     i += 1
@@ -221,12 +225,54 @@ def parse_ase(filepath: str) -> List[ASEMesh]:
 
                 if in_tverts and '*MESH_TFACE' in l:
                     in_tverts = False
+                    in_tfaces = True
+                
+                if in_tfaces and l.startswith('*MESH_TFACE'):
+                    parts = l.split()
+                    if len(parts) >= 5:
+                        try:
+                            tfaces.append((int(parts[2]), int(parts[3]), int(parts[4])))
+                        except ValueError:
+                            pass
                     i += 1
                     continue
 
                 i += 1
 
             mesh.normals = vertex_normals_temp
+
+            if tverts and tfaces and len(tfaces) == len(mesh.faces):
+                expanded_vertices = []
+                expanded_uvs = []
+                expanded_faces = []
+                expanded_normals = []
+                use_expanded_normals = len(vertex_normals_temp) >= len(mesh.faces) * 3
+
+                for face_index, face in enumerate(mesh.faces):
+                    uv_face = tfaces[face_index]
+                    base_index = len(expanded_vertices)
+
+                    expanded_vertices.extend([
+                        mesh.vertices[face[0]],
+                        mesh.vertices[face[1]],
+                        mesh.vertices[face[2]],
+                    ])
+                    expanded_uvs.extend([
+                        tverts[uv_face[0]],
+                        tverts[uv_face[1]],
+                        tverts[uv_face[2]],
+                    ])
+                    if use_expanded_normals:
+                        normal_offset = face_index * 3
+                        expanded_normals.extend(vertex_normals_temp[normal_offset:normal_offset + 3])
+                    expanded_faces.append((base_index, base_index + 1, base_index + 2))
+
+                mesh.vertices = expanded_vertices
+                mesh.uvs = expanded_uvs
+                mesh.faces = expanded_faces
+                mesh.normals = expanded_normals if use_expanded_normals else []
+            else:
+                mesh.uvs = tverts
 
             if mesh.material_ref in materials:
                 material = materials[mesh.material_ref]

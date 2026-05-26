@@ -15,17 +15,39 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from parse_ase import parse_all_models, ASEMesh
+from parse_ase import parse_all_models, parse_ase, ASEMesh
 from parse_anim import parse_all_animations, select_best_animations, AnimClip
 from parse_object import build_skeleton_from_object, BODY_PART_ORDER, BONE_PARENTS, BODY_PART_INDEX, axis_angle_to_quaternion
 from write_glb import GLBBuilder
 from customize import (
-    generate_hair_mesh, generate_beard_mesh, generate_ears,
+    generate_hair_mesh, generate_ears,
     generate_fingers, generate_face_features,
-    generate_face_texture, SKIN_TONES, HAIR_COLORS
+    generate_skin_texture, generate_beard_mesh,
+    SKIN_TONES, HAIR_COLORS
 )
+from playermodifier_loader import get_eye_meshes
+
+
+def _submesh_material_category(submesh_name: str, bone_name: str) -> str:
+    """Map ASE submesh name to material category for Android kit replacement."""
+    n = submesh_name.lower()
+    if 'shirt' in n:
+        return 'kit_upper'
+    if 'trunks' in n:
+        return 'kit_lower'
+    if 'sock' in n:
+        return 'kit_lower'
+    if 'shoe' in n or 'sole' in n or 'plane' in n:
+        return 'shoe'
+    # Single-mesh bones: body/middle are torso (kit upper)
+    if bone_name in ('body', 'middle'):
+        return 'kit_upper'
+    if 'head' in n:
+        return 'head_skin'
+    return 'skin'
 from avatar_combinations import (
-    PRESET_AVATARS, AvatarConfig, avatar_to_dict, export_avatar_catalog
+    PRESET_AVATARS, AvatarConfig, avatar_to_dict, export_avatar_catalog,
+    generate_all_combinations
 )
 from coords import vec3_zup_to_yup, quat_zup_to_yup, normalize_quat, axis_zup_to_yup
 
@@ -80,12 +102,12 @@ def load_shared_data(data_dir: str):
     all_anims = parse_all_animations(anim_dir)
     selected_anims = select_best_animations(all_anims)
 
-    # Fill to 16 animations
-    mirror_map = {4: 5, 12: 11}
+    # Fill to 17 animations
+    mirror_map = {4: 5, 15: 14}  # Shoot R -> L, GK Dive R -> L
     for src_id, dst_id in mirror_map.items():
         if dst_id not in selected_anims and src_id in selected_anims:
             selected_anims[dst_id] = mirror_animation(selected_anims[src_id])
-    for missing_id in range(16):
+    for missing_id in range(17):
         if missing_id not in selected_anims and 0 in selected_anims:
             selected_anims[missing_id] = selected_anims[0]
 
@@ -179,6 +201,68 @@ def load_bmp_as_png_bytes(data_dir: str, rel_path: str) -> Optional[bytes]:
     """Load a BMP texture and convert it to PNG bytes for glTF compatibility."""
     base_dir = os.path.join(data_dir, 'media', 'objects', 'players', 'textures')
     return load_image_as_png_bytes(data_dir, rel_path, base_dir=base_dir)
+
+
+def _map_hair_style_to_gf(style: str) -> str:
+    mapping = {
+        'bald': 'bald',
+        'short': 'short01',
+        'curly': 'short02',
+        'mohawk': 'medium01',
+        'long': 'long01',
+        'ponytail': 'long02',
+    }
+    return mapping.get(style, 'short01')
+
+
+def _map_hair_color_to_gf(color: str) -> str:
+    mapping = {
+        'black': 'black',
+        'dark_brown': 'brown',
+        'brown': 'brown',
+        'light_brown': 'darkblonde',
+        'blonde': 'blonde',
+        'red': 'red',
+        'grey': 'darkblonde',
+        'white': 'blonde',
+    }
+    return mapping.get(color, 'brown')
+
+
+def load_gf_hairstyle_mesh(data_dir: str, hair_style: str):
+    gf_style = _map_hair_style_to_gf(hair_style)
+    if gf_style == 'bald':
+        return [], [], None, None
+
+    ase_path = os.path.join(data_dir, 'media', 'objects', 'players', 'hairstyles', f'{gf_style}.ase')
+    if not os.path.isfile(ase_path):
+        return [], [], None, None
+
+    meshes = parse_ase(ase_path)
+    verts = []
+    faces = []
+    normals = []
+    uvs = []
+    vert_offset = 0
+
+    for mesh in meshes:
+        local_verts = [vec3_zup_to_yup(v) for v in mesh.vertices]
+        verts.extend(local_verts)
+        faces.extend([(a + vert_offset, b + vert_offset, c + vert_offset) for a, b, c in mesh.faces])
+
+        if mesh.normals and len(mesh.normals) == len(mesh.vertices):
+            normals.extend([vec3_zup_to_yup(n) for n in mesh.normals])
+        else:
+            normals.extend([(0.0, 1.0, 0.0)] * len(mesh.vertices))
+
+        if mesh.uvs and len(mesh.uvs) == len(mesh.vertices):
+            uvs.extend(list(mesh.uvs))
+        else:
+            uvs.extend([(0.0, 0.0)] * len(mesh.vertices))
+
+        vert_offset += len(mesh.vertices)
+
+    return verts, faces, normals, uvs
 
 
 def parse_generic_object_geometries(object_path: str) -> List[dict]:
@@ -429,8 +513,8 @@ def build_body_mesh_data(models: dict, skeleton) -> dict:
     """Build local-space mesh data for each bone of the skeleton.
 
     GameplayFootball body-part ASE files are authored in the local space of their
-    corresponding rigid node. Applying the inverse bind/world transform here would
-    double-apply the node offset and explode the assembled character.
+    corresponding rigid node. We keep submeshes separate so each can receive the
+    correct material (skin, kit_upper, kit_lower, shoe) for Android dynamic replacement.
     """
 
     bone_meshes = {}
@@ -444,39 +528,37 @@ def build_body_mesh_data(models: dict, skeleton) -> dict:
         if mesh_key not in models:
             continue
 
-        verts_local = []
-        faces_local = []
-        normals_local = []
-        uvs_local = []
-        vertex_offset = 0
-
+        submeshes = []
         for ase_mesh in models[mesh_key]:
-            nv = len(ase_mesh.vertices)
+            if bone_name == 'neck' and ase_mesh.name.lower() == 'hair':
+                continue
 
-            verts_local.extend([vec3_zup_to_yup(v) for v in ase_mesh.vertices])
+            nv = len(ase_mesh.vertices)
+            verts_local = [vec3_zup_to_yup(v) for v in ase_mesh.vertices]
 
             if ase_mesh.normals and len(ase_mesh.normals) == nv:
-                normals_local.extend([vec3_zup_to_yup(n) for n in ase_mesh.normals])
+                normals_local = [vec3_zup_to_yup(n) for n in ase_mesh.normals]
             else:
-                normals_local.extend([(0, 1, 0)] * nv)
+                normals_local = [(0, 1, 0)] * nv
 
             if ase_mesh.uvs and len(ase_mesh.uvs) == nv:
-                # Do NOT flip here. GLBBuilder.add_primitive_geometry flips it automatically once.
-                uvs_local.extend(ase_mesh.uvs)
+                uvs_local = list(ase_mesh.uvs)
             else:
-                uvs_local.extend([(0, 0)] * nv)
+                uvs_local = [(0, 0)] * nv
 
-            for f in ase_mesh.faces:
-                faces_local.append((f[0] + vertex_offset, f[1] + vertex_offset, f[2] + vertex_offset))
+            faces_local = list(ase_mesh.faces)
+            mat_cat = _submesh_material_category(ase_mesh.name, bone_name)
 
-            vertex_offset += nv
+            submeshes.append({
+                'name': ase_mesh.name,
+                'category': mat_cat,
+                'verts': verts_local,
+                'faces': faces_local,
+                'normals': normals_local,
+                'uvs': uvs_local,
+            })
 
-        bone_meshes[bone_name] = {
-            'verts': verts_local,
-            'faces': faces_local,
-            'normals': normals_local,
-            'uvs': uvs_local
-        }
+        bone_meshes[bone_name] = submeshes
 
     return bone_meshes
 
@@ -498,35 +580,41 @@ def build_base_glb(skeleton, bone_meshes, selected_anims) -> bytes:
     """Build the base player GLB (no customizations) using a clean rigid hierarchy."""
     builder = GLBBuilder()
     skin_mat = builder.add_material('skin', [0.82, 0.65, 0.50, 1.0])
-    kit_mat = builder.add_material('kit', [0.90, 0.90, 0.90, 1.0])
+    kit_upper_mat = builder.add_material('kit_upper', [0.90, 0.90, 0.90, 1.0])
+    kit_lower_mat = builder.add_material('kit_lower', [0.85, 0.85, 0.85, 1.0])
     shoe_mat = builder.add_material('shoe', [0.20, 0.20, 0.20, 1.0])
 
     bone_nodes = builder.add_skeleton_nodes(skeleton)
 
-    categories = {
-        'body': kit_mat,
-        'middle': kit_mat,
-        'left_ankle': shoe_mat,
-        'right_ankle': shoe_mat,
+    mat_map = {
+        'skin': skin_mat,
+        'kit_upper': kit_upper_mat,
+        'kit_lower': kit_lower_mat,
+        'shoe': shoe_mat,
     }
 
-    for bone_name, mesh_data in bone_meshes.items():
+    for bone_name, submeshes in bone_meshes.items():
         if bone_name not in BODY_PART_INDEX:
             continue
         bone_idx = BODY_PART_INDEX[bone_name]
         node_idx = bone_nodes[bone_idx]
-        mat_idx = categories.get(bone_name, skin_mat)
 
-        prim = builder.add_primitive_geometry(
-            mesh_data['verts'], mesh_data['faces'],
-            mesh_data['normals'], mesh_data['uvs'],
-            material_idx=mat_idx
-        )
-        mesh_idx = builder.add_mesh(f'mesh_{bone_name}', [prim])
-        builder.gltf['nodes'][node_idx]['mesh'] = mesh_idx
+        primitives = []
+        for sub in submeshes:
+            mat_idx = mat_map.get(sub['category'], skin_mat)
+            prim = builder.add_primitive_geometry(
+                sub['verts'], sub['faces'],
+                sub['normals'], sub['uvs'],
+                material_idx=mat_idx
+            )
+            primitives.append(prim)
+
+        if primitives:
+            mesh_idx = builder.add_mesh(f'mesh_{bone_name}', primitives)
+            builder.gltf['nodes'][node_idx]['mesh'] = mesh_idx
 
     skeleton_names = [b.name for b in skeleton]
-    for anim_id in range(16):
+    for anim_id in range(17):
         clip = selected_anims.get(anim_id)
         if clip:
             builder.add_animation(f"anim_{anim_id:02d}", clip, skeleton_names, bone_nodes)
@@ -535,9 +623,11 @@ def build_base_glb(skeleton, bone_meshes, selected_anims) -> bytes:
 
 
 def build_avatar_glb(avatar: AvatarConfig, skeleton, bone_meshes, selected_anims) -> bytes:
-    """Build a fully customized GLB for one avatar preset with high quality textures using a clean rigid hierarchy."""
+    """Build a fully customized GLB for one avatar with modular materials for Android kit replacement."""
     builder = GLBBuilder()
-    
+
+    data_dir = find_data_dir()
+
     # Resolve correct skin texture based on skin tone preset
     skin_bmp_map = {
         'light': 'skin01.bmp',
@@ -547,29 +637,71 @@ def build_avatar_glb(avatar: AvatarConfig, skeleton, bone_meshes, selected_anims
         'black': 'skin04.bmp',
     }
     skin_bmp = skin_bmp_map.get(avatar.skin_tone, 'skin02.bmp')
-    
-    data_dir = find_data_dir()
-    
+
     # Load BMP textures from game assets and convert to embedded PNGs
     skin_png = load_bmp_as_png_bytes(data_dir, skin_bmp) if data_dir else None
     kit_png = load_bmp_as_png_bytes(data_dir, 'kit_template.bmp') if data_dir else None
     shoe_png = load_bmp_as_png_bytes(data_dir, 'shoe.bmp') if data_dir else None
+    hair_tex_name = _map_hair_color_to_gf(avatar.hair_color) + '.bmp'
+    hair_png = load_image_as_png_bytes(
+        data_dir,
+        hair_tex_name,
+        base_dir=os.path.join(data_dir, 'media', 'objects', 'players', 'textures', 'hair')
+    ) if data_dir else None
 
-    # Fallbacks if files not found
+    # Fallback colors
     skin_color = SKIN_TONES.get(avatar.skin_tone, SKIN_TONES['medium'])
-    hair_color = HAIR_COLORS.get(avatar.hair_color, HAIR_COLORS['black'])
-    beard_color = HAIR_COLORS.get(avatar.beard_color, HAIR_COLORS['black'])
 
     skin_tex_idx = builder.add_image(skin_png) if skin_png else -1
     kit_tex_idx = builder.add_image(kit_png) if kit_png else -1
     shoe_tex_idx = builder.add_image(shoe_png) if shoe_png else -1
+    hair_tex_idx = builder.add_image(hair_png) if hair_png else -1
 
+    # Head skin texture: full skin map with face features painted at the
+    # verified UV anchors of head.ase. Replaces the old decal-plane approach.
+    head_skin_arr = generate_skin_texture(
+        avatar.skin_tone,
+        avatar.eye_color,
+        avatar.beard_style,
+        avatar.beard_color,
+        resolution=512,
+    )
+    head_skin_png = png_bytes_from_texture(head_skin_arr)
+    head_skin_tex_idx = builder.add_image(head_skin_png) if head_skin_png else -1
+
+    # Materials named for Android runtime replacement
     skin_mat = builder.add_material('skin', list(skin_color), texture_idx=skin_tex_idx)
-    kit_mat = builder.add_material('kit', [0.95, 0.95, 0.95, 1.0], texture_idx=kit_tex_idx)
+    head_skin_mat = builder.add_material('head_skin', [1.0, 1.0, 1.0, 1.0], texture_idx=head_skin_tex_idx)
+    kit_upper_mat = builder.add_material('kit_upper', [0.95, 0.95, 0.95, 1.0], texture_idx=kit_tex_idx)
+    kit_lower_mat = builder.add_material('kit_lower', [0.85, 0.85, 0.85, 1.0], texture_idx=kit_tex_idx)
     shoe_mat = builder.add_material('shoe', [0.85, 0.85, 0.85, 1.0], texture_idx=shoe_tex_idx)
-    
-    hair_mat = builder.add_material('hair', list(hair_color))
-    beard_mat = builder.add_material('beard', list(beard_color))
+    hair_mat = builder.add_material('hair', [1.0, 1.0, 1.0, 1.0], texture_idx=hair_tex_idx)
+
+    # Eye materials — iris color varies per avatar
+    _EYE_COLOR_RGB = {
+        'brown': [0.50, 0.25, 0.10, 1.0],
+        'blue':  [0.10, 0.30, 0.55, 1.0],
+        'green': [0.10, 0.45, 0.20, 1.0],
+    }
+    eye_white_mat = builder.add_material('eye_white', [0.96, 0.94, 0.90, 1.0])
+    eye_black_mat = builder.add_material('eye_black', [0.04, 0.04, 0.04, 1.0])
+    eye_brown_mat = builder.add_material(
+        'eye_brown',
+        _EYE_COLOR_RGB.get(avatar.eye_color, [0.50, 0.25, 0.10, 1.0])
+    )
+    eye_materials = {
+        'eye_white': eye_white_mat,
+        'eye_black': eye_black_mat,
+        'eye_brown': eye_brown_mat,
+    }
+
+    mat_map = {
+        'skin': skin_mat,
+        'head_skin': head_skin_mat,
+        'kit_upper': kit_upper_mat,
+        'kit_lower': kit_lower_mat,
+        'shoe': shoe_mat,
+    }
 
     # Add skeleton nodes
     bone_nodes = builder.add_skeleton_nodes(skeleton)
@@ -588,69 +720,129 @@ def build_avatar_glb(avatar: AvatarConfig, skeleton, bone_meshes, selected_anims
                 builder.gltf['nodes'][bone_nodes[i]]['scale'] = [sx, 1.0, sz]
                 break
 
-    # Assign rigid meshes to skeleton nodes
-    categories = {
-        'body': kit_mat,
-        'middle': kit_mat,
-        'left_ankle': shoe_mat,
-        'right_ankle': shoe_mat,
-    }
+    # Replace GF head with playermodifier merged head+neck mesh (fixed config)
+    try:
+        from playermodifier_loader import get_head_mesh
+        head_verts, head_norms, head_uvs, head_idx = get_head_mesh()
+        head_faces = [(int(head_idx[i]), int(head_idx[i+1]), int(head_idx[i+2]))
+                      for i in range(0, len(head_idx), 3)]
+        modified_bone_meshes = {}
+        for bone_name, submeshes in bone_meshes.items():
+            if bone_name == 'neck':
+                new_submeshes = []
+                replaced = False
+                for sub in submeshes:
+                    if sub['name'].lower() == 'head' and not replaced:
+                        new_submeshes.append({
+                            'name': 'head',
+                            'category': 'head_skin',
+                            'verts': head_verts.tolist(),
+                            'faces': head_faces,
+                            'normals': head_norms.tolist(),
+                            'uvs': head_uvs.tolist(),
+                        })
+                        replaced = True
+                    else:
+                        new_submeshes.append(sub)
+                modified_bone_meshes[bone_name] = new_submeshes
+            else:
+                modified_bone_meshes[bone_name] = submeshes
+        bone_meshes = modified_bone_meshes
+    except Exception as e:
+        print(f"  [WARN] Failed to load headproto head: {e}")
 
-    for bone_name, mesh_data in bone_meshes.items():
+    # Assign per-submesh materials
+    for bone_name, submeshes in bone_meshes.items():
         if bone_name not in BODY_PART_INDEX:
             continue
         bone_idx = BODY_PART_INDEX[bone_name]
         node_idx = bone_nodes[bone_idx]
-        mat_idx = categories.get(bone_name, skin_mat)
 
-        prim = builder.add_primitive_geometry(
-            mesh_data['verts'], mesh_data['faces'],
-            mesh_data['normals'], mesh_data['uvs'],
-            material_idx=mat_idx
-        )
-        mesh_idx = builder.add_mesh(f'mesh_{bone_name}', [prim])
-        builder.gltf['nodes'][node_idx]['mesh'] = mesh_idx
+        primitives = []
+        for sub in submeshes:
+            mat_idx = mat_map.get(sub['category'], skin_mat)
+            prim = builder.add_primitive_geometry(
+                sub['verts'], sub['faces'],
+                sub['normals'], sub['uvs'],
+                material_idx=mat_idx
+            )
+            primitives.append(prim)
 
-    # Attach rigid customization elements (Hair, Beard, and Fingers) as direct children of the skeleton nodes
+        if primitives:
+            mesh_idx = builder.add_mesh(f'mesh_{bone_name}', primitives)
+            builder.gltf['nodes'][node_idx]['mesh'] = mesh_idx
+
+    # Attach rigid customization elements
     neck_idx = BODY_PART_ORDER.index('neck')
     neck_node_idx = bone_nodes[neck_idx]
 
-    def add_rigid_custom_part(name: str, verts: List[Tuple], faces: List[Tuple], material_idx: int, parent_node_idx: int):
+    def add_rigid_custom_part(name: str, verts, faces, material_idx: int,
+                               parent_node_idx: int, translation=(0, 0, 0),
+                               normals=None, uvs=None):
         if not verts or not faces:
             return
-        prim = builder.add_primitive_geometry(
-            verts, faces,
-            material_idx=material_idx
-        )
+        prim = builder.add_primitive_geometry(verts, faces, normals, uvs,
+                                               material_idx=material_idx)
         mesh_idx = builder.add_mesh(name, [prim])
-        child_node_idx = builder.add_node(name + '_node', mesh_idx=mesh_idx)
-        
-        # Insert as child in the glTF node hierarchy
+        child_node_idx = builder.add_node(
+            name + '_node', mesh_idx=mesh_idx,
+            translation=list(translation)
+        )
         p_node = builder.gltf['nodes'][parent_node_idx]
         if 'children' not in p_node:
             p_node['children'] = []
         p_node['children'].append(child_node_idx)
 
-    # Hair
+    # Ears (flat against the side of the head)
+    ear_v, ear_f, _ = generate_ears()
+    if ear_v and ear_f:
+        add_rigid_custom_part('ears', ear_v, ear_f, skin_mat, neck_node_idx)
+
+    # Hair (on top of head — vertices already positioned)
     if avatar.hair_style != 'bald':
-        hv, hf, _ = generate_hair_mesh(avatar.hair_style)
-        add_rigid_custom_part('hair', hv, hf, hair_mat, neck_node_idx)
+        hv, hf, hn, huvs = load_gf_hairstyle_mesh(data_dir, avatar.hair_style)
+        if hv and hf:
+            add_rigid_custom_part('hair', hv, hf, hair_mat, neck_node_idx,
+                                  normals=hn, uvs=huvs)
+        else:
+            hv, hf, _ = generate_hair_mesh(avatar.hair_style)
+            add_rigid_custom_part('hair', hv, hf, hair_mat, neck_node_idx)
 
-    # Beard
-    if avatar.beard_style != 'none':
-        bv, bf, _ = generate_beard_mesh(avatar.beard_style)
-        add_rigid_custom_part('beard', bv, bf, beard_mat, neck_node_idx)
+    # Face features are now painted directly on the head's skin texture via
+    # generate_skin_texture(); no more decal planes are added here.
 
-    # Fingers (rigidly attached to left/right elbow nodes)
+    # Eyes (from playermodifier JSON, positioned on the new head face)
+    try:
+        eye_meshes = get_eye_meshes()
+        for eye_verts, eye_norms, eye_uvs, eye_idx, eye_name in eye_meshes:
+            if eye_verts is None or len(eye_verts) == 0:
+                continue
+            faces = [(int(eye_idx[i]), int(eye_idx[i+1]), int(eye_idx[i+2]))
+                     for i in range(0, len(eye_idx), 3)]
+            mat_idx = eye_materials.get(eye_name, eye_white_mat)
+            add_rigid_custom_part(
+                eye_name, eye_verts.tolist(), faces, mat_idx,
+                neck_node_idx, normals=eye_norms.tolist(), uvs=eye_uvs.tolist()
+            )
+    except Exception as e:
+        print(f"  [WARN] Failed to add playermodifier eyes: {e}")
+
+    # Fingers
     for side, elbow_name in [('left', 'left_elbow'), ('right', 'right_elbow')]:
         fgv, fgf, _ = generate_fingers(side)
         elbow_idx = BODY_PART_ORDER.index(elbow_name)
         elbow_node_idx = bone_nodes[elbow_idx]
         add_rigid_custom_part(f'fingers_{side}', fgv, fgf, skin_mat, elbow_node_idx)
 
+    # Beard
+    if avatar.beard_style != 'none':
+        bv, bf, _ = generate_beard_mesh(avatar.beard_style)
+        if bv and bf:
+            add_rigid_custom_part('beard', bv, bf, hair_mat, neck_node_idx)
+
     # Animations
     skeleton_names = [b.name for b in skeleton]
-    for anim_id in range(16):
+    for anim_id in range(17):
         clip = selected_anims.get(anim_id)
         if clip:
             builder.add_animation(f"anim_{anim_id:02d}", clip, skeleton_names, bone_nodes)
@@ -678,17 +870,19 @@ def export_base_player(data_dir: str, output_dir: str):
     return skeleton, body_data, selected_anims
 
 
-def export_customized_avatars(output_dir: str, skeleton, body_data, selected_anims):
+def export_customized_avatars(output_dir: str, skeleton, body_data, selected_anims, max_avatars: int = 256):
     print("\n" + "=" * 60)
-    print("  STEP 2: Exporting customized avatars (1 GLB each)")
+    print(f"  STEP 2: Exporting customized avatars (max {max_avatars})")
     print("=" * 60)
 
     avatars_dir = os.path.join(output_dir, 'avatars')
     os.makedirs(avatars_dir, exist_ok=True)
 
-    for i, avatar in enumerate(PRESET_AVATARS):
-        safe_name = avatar.name.replace(' ', '_').lower()
-        print(f"  [{i+1:2d}/{len(PRESET_AVATARS)}] {avatar.name}...", end=' ', flush=True)
+    all_avatars = generate_all_combinations(max_count=max_avatars)
+
+    for i, avatar in enumerate(all_avatars):
+        safe_name = avatar.id
+        print(f"  [{i+1:3d}/{len(all_avatars)}] {avatar.id} {avatar.name}...", end=' ', flush=True)
 
         glb_data = build_avatar_glb(avatar, skeleton, body_data, selected_anims)
 
@@ -698,9 +892,59 @@ def export_customized_avatars(output_dir: str, skeleton, body_data, selected_ani
         print(f"{len(glb_data)/1024:.0f} KB")
 
     catalog_path = os.path.join(output_dir, 'avatar_catalog.json')
-    export_avatar_catalog(catalog_path)
+    export_avatar_catalog(catalog_path, all_avatars)
 
-    print(f"\n  {len(PRESET_AVATARS)} avatar GLBs in: {avatars_dir}")
+    print(f"\n  {len(all_avatars)} avatar GLBs in: {avatars_dir}")
+
+
+def export_animations_binary(selected_anims: dict, output_path: str):
+    """Export selected animation clips to a compact binary file for Android runtime."""
+    print("\n" + "=" * 60)
+    print("  Exporting animation binary for Android runtime")
+    print("=" * 60)
+
+    # Order clips by anim_id 0..16
+    ordered_clips = []
+    for i in range(17):
+        if i in selected_anims:
+            ordered_clips.append(selected_anims[i])
+        else:
+            # Fallback to idle if missing
+            ordered_clips.append(selected_anims.get(0, list(selected_anims.values())[0]))
+
+    bone_names = [
+        'player', 'body', 'middle',
+        'left_thigh', 'left_knee', 'left_ankle',
+        'right_thigh', 'right_knee', 'right_ankle',
+        'left_shoulder', 'left_elbow',
+        'right_shoulder', 'right_elbow',
+        'head'
+    ]
+
+    with open(output_path, 'wb') as f:
+        # Header
+        f.write(struct.pack('<4sHHHH', b'DZAN', 1, len(ordered_clips), len(bone_names), 0))
+
+        for clip in ordered_clips:
+            name = clip.name.encode('utf-8')[:31].ljust(32, b'\x00')
+            duration = (clip.frame_count / 60.0) if clip.frame_count > 0 else 0.0
+            num_tracks = len(bone_names)
+            f.write(struct.pack('<32sfB', name, duration, num_tracks))
+
+            for bone_name in bone_names:
+                track = clip.tracks.get(bone_name)
+                kfs = track.keyframes if track else []
+                track_name = bone_name.encode('utf-8')[:31].ljust(32, b'\x00')
+                f.write(struct.pack('<32sH', track_name, len(kfs)))
+                for kf in kfs:
+                    t = kf.frame / 60.0
+                    pos = kf.position or (0.0, 0.0, 0.0)
+                    rot = kf.rotation
+                    f.write(struct.pack('<fffffffff', t, pos[0], pos[1], pos[2], rot[0], rot[1], rot[2], rot[3], 0.0))
+
+    print(f"  Animation binary exported: {output_path}")
+    size_kb = os.path.getsize(output_path) / 1024.0
+    print(f"  Size: {size_kb:.1f} KB ({len(ordered_clips)} clips, {len(bone_names)} bones each)")
 
 
 def main():
@@ -710,6 +954,7 @@ def main():
     parser.add_argument('--skip-base', action='store_true')
     parser.add_argument('--skip-avatars', action='store_true')
     parser.add_argument('--skip-static', action='store_true')
+    parser.add_argument('--max-avatars', type=int, default=256, help='Maximum number of combinatorial avatars to export (default: 256)')
     args = parser.parse_args()
 
     data_dir = args.data_dir or find_data_dir()
@@ -726,11 +971,14 @@ def main():
     if not args.skip_base:
         skeleton, body_data, selected_anims = export_base_player(data_dir, args.output_dir)
 
+    if selected_anims:
+        export_animations_binary(selected_anims, os.path.join(args.output_dir, 'anim_templates.bin'))
+
     if not args.skip_avatars:
         if skeleton is None:
             models, skeleton, selected_anims = load_shared_data(data_dir)
             body_data = build_body_mesh_data(models, skeleton)
-        export_customized_avatars(args.output_dir, skeleton, body_data, selected_anims)
+        export_customized_avatars(args.output_dir, skeleton, body_data, selected_anims, max_avatars=args.max_avatars)
 
     if not args.skip_static:
         export_static_objects(data_dir, args.output_dir)
@@ -739,7 +987,7 @@ def main():
     print("  EXPORT COMPLETE")
     print("=" * 60)
     print(f"\n  {args.output_dir}/player_base.glb  - Base model (no customizations)")
-    print(f"  {args.output_dir}/avatars/*.glb     - 16 customized avatars")
+    print(f"  {args.output_dir}/avatars/*.glb     - {args.max_avatars} customized avatars")
     print(f"  {args.output_dir}/avatar_catalog.json")
     print(f"  {args.output_dir}/static/**/*.glb     - Reusable static objects")
 

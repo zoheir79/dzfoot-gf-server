@@ -19,7 +19,7 @@ struct PlayerStaticInfo {
     uint8_t  role;               // e_PlayerRole
     char     lastName[kMaxNameLen];
     float    height;             // meters
-    int      skinColor;          // 0..N
+    int32_t  skinColor;          // 0..N
     char     hairStyle[kMaxHairLen];
     char     hairColor[kMaxHairLen];
     float    stats[kNumPlayerStats]; // physical/technical/mental (see PlayerStat enum)
