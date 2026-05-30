@@ -224,7 +224,15 @@ void Referee::Process() {
     if (!match->IsInPlay() && !match->IsInSetPiece() && buffer.active == true) {
       DO_VALIDATION;
 
-      if (buffer.prepareTime == match->GetActualTime_ms()) {
+      // DZFoot 60Hz: the clock advances by int(kTimeStepMs) (16 ms) per step,
+      // so thresholds that are not multiples of the step (e.g. now+500) were
+      // never hit by an exact "==" comparison, freezing kickoffs/set pieces.
+      // Fire once when the clock first enters the half-open window
+      // [threshold, threshold + stepMs): exactly one tick lands inside it.
+      const unsigned long now = match->GetActualTime_ms();
+      const unsigned long stepMs = static_cast<unsigned long>(int(kTimeStepMs));
+
+      if (now >= buffer.prepareTime && now < buffer.prepareTime + stepMs) {
         DO_VALIDATION;
         if (buffer.endPhase == true) {
           if (match->GetMatchPhase() == e_MatchPhase_PreMatch) {
@@ -238,7 +246,7 @@ void Referee::Process() {
         DO_VALIDATION;
       }
 
-      if (buffer.startTime == match->GetActualTime_ms()) {
+      if (now >= buffer.startTime && now < buffer.startTime + stepMs) {
         DO_VALIDATION;
         // blow whistle and wait for set piece taker to touch the ball
         match->StartPlay();
