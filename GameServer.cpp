@@ -46,19 +46,21 @@ static void copyString(char* dst, size_t dstLen, const std::string& src) {
 // Default 4-3-3 formation matching GameplayFootball/data/teamdata.cpp default XML.
 // Used to populate ScenarioConfig::{left,right}_team before start_game() so that
 // Match::GetState() can resize SharedInfo controller vectors safely.
-static void appendDefault433(std::vector<FormationEntry>& dst, bool controllable) {
+static void appendDefault433(std::vector<FormationEntry>& dst, bool controllable, bool mirror) {
     // (x, y, role, lazy, controllable). y will be flipped internally by FORMATION_Y_SCALE.
-    dst.emplace_back(-1.0f,  0.00f, e_PlayerRole_GK, false, controllable);
-    dst.emplace_back(-0.7f,  0.75f, e_PlayerRole_LB, false, controllable);
-    dst.emplace_back(-1.0f,  0.25f, e_PlayerRole_CB, false, controllable);
-    dst.emplace_back(-1.0f, -0.25f, e_PlayerRole_CB, false, controllable);
-    dst.emplace_back(-0.7f, -0.75f, e_PlayerRole_RB, false, controllable);
-    dst.emplace_back( 0.0f,  0.50f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back(-0.2f,  0.00f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back( 0.0f, -0.50f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back( 0.6f,  0.75f, e_PlayerRole_LM, false, controllable);
-    dst.emplace_back( 1.0f,  0.00f, e_PlayerRole_CF, false, controllable);
-    dst.emplace_back( 0.6f, -0.75f, e_PlayerRole_RM, false, controllable);
+    const float sx = mirror ? -1.0f : 1.0f;
+    const float sy = mirror ? -1.0f : 1.0f;
+    dst.emplace_back(sx * -1.0f, sy *  0.00f, e_PlayerRole_GK, false, controllable);
+    dst.emplace_back(sx * -0.7f, sy *  0.75f, e_PlayerRole_LB, false, controllable);
+    dst.emplace_back(sx * -1.0f, sy *  0.25f, e_PlayerRole_CB, false, controllable);
+    dst.emplace_back(sx * -1.0f, sy * -0.25f, e_PlayerRole_CB, false, controllable);
+    dst.emplace_back(sx * -0.7f, sy * -0.75f, e_PlayerRole_RB, false, controllable);
+    dst.emplace_back(sx *  0.0f, sy *  0.50f, e_PlayerRole_CM, false, controllable);
+    dst.emplace_back(sx * -0.2f, sy *  0.00f, e_PlayerRole_CM, false, controllable);
+    dst.emplace_back(sx *  0.0f, sy * -0.50f, e_PlayerRole_CM, false, controllable);
+    dst.emplace_back(sx *  0.6f, sy *  0.75f, e_PlayerRole_LM, false, controllable);
+    dst.emplace_back(sx *  1.0f, sy *  0.00f, e_PlayerRole_CF, false, controllable);
+    dst.emplace_back(sx *  0.6f, sy * -0.75f, e_PlayerRole_RM, false, controllable);
 }
 
 // ------------------------------------------------------------------
@@ -188,8 +190,8 @@ void Server::run() {
     // Pre-fill default 4-3-3 formations (avoids empty-team crash)
     bool leftControllable = (cfg_.gameMode != 2);
     bool rightControllable = (cfg_.gameMode == 0);
-    if (sc.left_team.empty()) appendDefault433(sc.left_team, leftControllable);
-    if (sc.right_team.empty()) appendDefault433(sc.right_team, rightControllable);
+    if (sc.left_team.empty()) appendDefault433(sc.left_team, leftControllable, false);
+    if (sc.right_team.empty()) appendDefault433(sc.right_team, rightControllable, true);
 
     gameEnv_->start_game();
 
@@ -391,13 +393,13 @@ void Server::tick() {
                         }
                     }
                 }
-                if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[2]) < 0.001f) {
+                if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
                     // fallback to scaled SharedInfo
                     ps.dir[0] = pi.player_direction.env_coord(0);
                     ps.dir[1] = pi.player_direction.env_coord(1);
                     ps.dir[2] = pi.player_direction.env_coord(2);
                 }
-                ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[2]);
+                ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
 
                 // Compute velocity by differentiating position (env coords / tick)
                 if (previousState_.tick == 0) {
