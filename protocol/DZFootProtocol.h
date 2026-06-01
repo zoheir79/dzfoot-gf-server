@@ -25,7 +25,8 @@ enum PacketType : uint16_t {
     PACKET_GAME_STATE   = 1,
     PACKET_MATCH_EVENT  = 2,
     PACKET_PLAYER_INPUT = 3,
-    PACKET_MATCH_SETUP  = 4
+    PACKET_MATCH_SETUP  = 4,
+    PACKET_TACTICAL_STATE = 5
 };
 
 struct PacketHeader {
@@ -152,7 +153,27 @@ enum EventType : uint8_t {
     EVENT_PENALTY      = 7,
     EVENT_KICK_OFF     = 8,
     EVENT_END_MATCH    = 9,
-    EVENT_HALF_TIME    = 10
+    EVENT_HALF_TIME    = 10,
+    EVENT_GOAL_KICK    = 11,
+    EVENT_OFFSIDE      = 12,
+    EVENT_FOUL         = 13,
+    EVENT_POSSESSION_CHANGE = 14,
+    EVENT_SHOT         = 15,
+    EVENT_PASS         = 16,
+    EVENT_TACKLE       = 17
+};
+
+enum TacticalIntent : uint8_t {
+    TACTICAL_INTENT_NONE = 0,
+    TACTICAL_INTENT_HOLD_FORMATION = 1,
+    TACTICAL_INTENT_CHASE_BALL = 2,
+    TACTICAL_INTENT_HAS_BALL = 3,
+    TACTICAL_INTENT_ATTACKING_RUN = 4,
+    TACTICAL_INTENT_PRESS = 5,
+    TACTICAL_INTENT_SUPPORT = 6,
+    TACTICAL_INTENT_MARK = 7,
+    TACTICAL_INTENT_SET_PIECE_TAKER = 8,
+    TACTICAL_INTENT_KEEPER_RUSH = 9
 };
 
 // ------------------------------------------------------------------
@@ -198,6 +219,43 @@ struct MatchSetupPacket {
 };
 static_assert(sizeof(MatchSetupPacket) == 12 + 1 + kMaxNameLen * 2 + 1 + 1 + (sizeof(PlayerStaticInfo) * DZ_MAX_PLAYERS), "MatchSetupPacket size check");
 
+struct TacticalPlayerState {
+    float formationTarget[3];
+    float targetPos[3];
+    float stamina01;
+    float formationDistance;
+    uint8_t staticRole;
+    uint8_t dynamicRole;
+    uint8_t functionType;
+    uint8_t velocityType;
+    uint8_t aiIntent;
+    uint8_t targetTeam;
+    uint8_t targetPlayer;
+    uint8_t actionFlags;
+    uint16_t tacticalFlags;
+    uint16_t _pad;
+};
+static_assert(sizeof(TacticalPlayerState) == 44, "TacticalPlayerState size mismatch");
+
+struct TacticalStatePacket {
+    PacketHeader header;
+    uint32_t tick;
+    uint64_t timestampUs;
+    uint8_t matchPhase;
+    uint8_t setPieceType;
+    uint8_t setPieceTeam;
+    uint8_t setPieceTaker;
+    uint8_t selectedPlayer[2];
+    uint8_t designatedPlayer[2];
+    uint8_t bestPossessionPlayer[2];
+    uint8_t lastTouchTeam;
+    uint8_t lastTouchPlayer;
+    float offsideTrapX[2];
+    TacticalPlayerState players[DZ_MAX_PLAYERS];
+};
+static_assert(sizeof(TacticalStatePacket) == 12 + 4 + 8 + 1 + 1 + 1 + 1 + 2 + 2 + 2 + 1 + 1 + 8 + (44 * 22), "TacticalStatePacket size sanity check");
+static_assert(sizeof(TacticalStatePacket) < 1200, "TacticalStatePacket must fit in a single datagram");
+
 #pragma pack(pop)
 
 // ============================================================================
@@ -229,6 +287,10 @@ inline bool validatePlayerInputPacket(const uint8_t* data, size_t len) {
 
 inline bool validateMatchSetupPacket(const uint8_t* data, size_t len) {
     return validatePacketHeader(data, len, PACKET_MATCH_SETUP, sizeof(MatchSetupPacket));
+}
+
+inline bool validateTacticalStatePacket(const uint8_t* data, size_t len) {
+    return validatePacketHeader(data, len, PACKET_TACTICAL_STATE, sizeof(TacticalStatePacket));
 }
 
 // ============================================================================

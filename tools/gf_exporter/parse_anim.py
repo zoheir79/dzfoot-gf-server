@@ -175,6 +175,10 @@ def classify_animation(clip: AnimClip, filepath: str) -> int:
     """Map a GF animation to Android anim_id (0-16)."""
     atype = clip.anim_type.lower()
     fname = os.path.basename(filepath).lower()
+    path_lower = filepath.lower().replace('\\', '/')
+
+    if 'movement_special/' in path_lower:
+        return 12
 
     # Check for goalkeeper-specific first
     if 'catch' in atype or 'catch' in fname:
@@ -190,7 +194,6 @@ def classify_animation(clip: AnimClip, filepath: str) -> int:
     if atype == 'movement':
         # Determine velocity from metadata or filename
         velocity = clip.metadata.get('incomingvelocity', '')
-        path_lower = filepath.lower()
 
         if 'idle' in path_lower:
             return 0  # ANIM_IDLE
@@ -238,6 +241,38 @@ def classify_animation(clip: AnimClip, filepath: str) -> int:
     return mapping.get(atype, 0)
 
 
+def animation_selection_score(anim_id: int, path: str, clip: AnimClip) -> tuple:
+    p = path.lower().replace('\\', '/')
+    keyframes = sum(len(t.keyframes) for t in clip.tracks.values())
+    preferred = {
+        0: ['movement/idle/000_idlelevel1.anim', 'ballcontrol/idle/000.anim', 'movement/idle/000_accel.anim'],
+        1: ['movement/walk/000.anim', 'movement/walk/045.anim', 'ballcontrol/walk/000.anim'],
+        2: ['movement/sprint/000_idlelevel1.anim', 'movement/sprint/000_decel_decel_decel_todo.anim'],
+        3: ['movement/sprint/000_idlelevel1.anim', 'ballcontrol/sprint/000.anim', 'movement/sprint/135_decel_decel_decel.anim'],
+        4: ['shot/', 'shot/sprint/'],
+        6: ['pass/walk/', 'pass/idle/', 'pass/sprint/'],
+        7: ['highpass/walk/', 'highpass/idle/', 'longpass/'],
+        8: ['deflect/idle/', 'deflect/walk/'],
+        9: ['sliding/sprint/', 'sliding/walk/'],
+        10: ['movement/dribble/135.anim', 'movement/dribble/045_decel.anim', 'ballcontrol/walk/000.anim'],
+        11: ['trip/'],
+        12: ['celebration/', 'movement_special/idle/special/000_stand_up_from_front.anim'],
+        16: ['catch/'],
+    }
+    bad = ['stand_up_from_back', 'stand_up_from_front', 'highballs', 'headerdive', 'jump']
+    penalty = sum(1 for token in bad if token in p)
+    rank = 100
+    for idx, token in enumerate(preferred.get(anim_id, [])):
+        if token in p:
+            rank = idx
+            break
+    if anim_id in (0, 1, 2, 3, 10) and 'movement_special/' in p:
+        penalty += 10
+    if anim_id == 10 and ('trap/' in p or 'highballs' in p):
+        penalty += 5
+    return (-penalty, -rank, keyframes)
+
+
 def select_best_animations(animations: Dict[str, AnimClip]) -> Dict[int, AnimClip]:
     """Select the best animation for each Android anim_id (0-16).
     Picks the animation with the most keyframes for each type.
@@ -251,10 +286,7 @@ def select_best_animations(animations: Dict[str, AnimClip]) -> Dict[int, AnimCli
     selected = {}
     for anim_id, clips in candidates.items():
         if clips:
-            # Pick the one with most keyframes (most detailed)
-            best = max(clips, key=lambda x: sum(
-                len(t.keyframes) for t in x[1].tracks.values()
-            ))
+            best = max(clips, key=lambda x: animation_selection_score(anim_id, x[0], x[1]))
             selected[anim_id] = best[1]
             print(f"  [ANIM] id={anim_id:2d} -> {best[0]} "
                   f"({sum(len(t.keyframes) for t in best[1].tracks.values())} kf)")

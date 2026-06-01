@@ -17,6 +17,8 @@ int main() {
     static_assert(sizeof(PlayerInputPacket) == 12 + 4 + 4 + 2 + 1 + 1 + 4 + 8, "PlayerInputPacket size");
     static_assert(sizeof(PlayerStaticInfo) == 3 + 32 + 4 + 4 + 32 + (4 * 21), "PlayerStaticInfo size");
     static_assert(sizeof(MatchSetupPacket) == 12 + 1 + 64 + 1 + 1 + (sizeof(PlayerStaticInfo) * 22), "MatchSetupPacket size");
+    static_assert(sizeof(TacticalPlayerState) == 44, "TacticalPlayerState size");
+    static_assert(sizeof(TacticalStatePacket) < 1200, "TacticalStatePacket fits datagram");
 
     std::cout << "sizeof(PacketHeader)       = " << sizeof(PacketHeader) << std::endl;
     std::cout << "sizeof(PlayerStaticInfo)   = " << sizeof(PlayerStaticInfo) << std::endl;
@@ -26,6 +28,7 @@ int main() {
     std::cout << "sizeof(GameStatePacket)    = " << sizeof(GameStatePacket) << std::endl;
     std::cout << "sizeof(MatchEventPacket)   = " << sizeof(MatchEventPacket) << std::endl;
     std::cout << "sizeof(PlayerInputPacket)  = " << sizeof(PlayerInputPacket) << std::endl;
+    std::cout << "sizeof(TacticalStatePacket)= " << sizeof(TacticalStatePacket) << std::endl;
 
     // 2. Build a golden GameStatePacket
     GameStatePacket gs{};
@@ -127,6 +130,26 @@ int main() {
     }
     if (validateMatchSetupPacket(msBuf, sizeof(msBuf) - 1)) {
         std::cerr << "FAIL: truncated MatchSetupPacket accepted" << std::endl;
+        return 1;
+    }
+
+    TacticalStatePacket tac{};
+    tac.header.magic = DZ_MAGIC;
+    tac.header.version = DZ_PROTOCOL_VERSION;
+    tac.header.type = PACKET_TACTICAL_STATE;
+    tac.header.size = sizeof(tac);
+    tac.tick = 12345;
+    tac.matchPhase = 1;
+    tac.selectedPlayer[0] = 3;
+    tac.players[3].aiIntent = TACTICAL_INTENT_ATTACKING_RUN;
+    uint8_t tacBuf[sizeof(tac)];
+    std::memcpy(tacBuf, &tac, sizeof(tac));
+    if (!validateTacticalStatePacket(tacBuf, sizeof(tacBuf))) {
+        std::cerr << "FAIL: valid TacticalStatePacket rejected" << std::endl;
+        return 1;
+    }
+    if (validateTacticalStatePacket(tacBuf, sizeof(tacBuf) - 1)) {
+        std::cerr << "FAIL: truncated TacticalStatePacket accepted" << std::endl;
         return 1;
     }
 

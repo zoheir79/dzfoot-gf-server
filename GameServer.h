@@ -21,6 +21,7 @@ using dzfoot::AnimId;
 using dzfoot::PlayerInputPacket;
 using dzfoot::GameStatePacket;
 using dzfoot::MatchEventPacket;
+using dzfoot::TacticalStatePacket;
 using dzfoot::EventType;
 using dzfoot::NetworkBallState;
 using dzfoot::NetworkPlayerState;
@@ -113,6 +114,8 @@ public:
 private:
     void tick();
     void broadcastGameState();
+    void updateTacticalState();
+    void broadcastTacticalState();
     void processInputs();
     void applyPendingInputs();
     void accumulateStats();
@@ -120,6 +123,8 @@ private:
 
     // Animation deduction from GF internal state
     uint8_t deduceAnimId(int playerIndex, int teamId);
+    uint8_t deduceAiIntent(class Player* player, class TeamAIController* controller, int playerIndex, int teamId);
+    int findPlayerIndex(class Team* team, class Player* player) const;
 
     // Helpers
     float getHeadingFromDir(float dx, float dz) const;
@@ -129,6 +134,7 @@ private:
     std::atomic<bool> running_{true};
     GameState currentState_;
     GameState previousState_; // for velocity diff
+    TacticalStatePacket tacticalState_ = {};
     uint32_t tickCounter_ = 0;
     std::vector<MatchEvent> eventQueue_;
     std::chrono::steady_clock::time_point startTime_;

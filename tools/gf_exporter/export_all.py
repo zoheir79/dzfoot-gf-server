@@ -25,7 +25,7 @@ from customize import (
     generate_skin_texture, generate_beard_mesh,
     SKIN_TONES, HAIR_COLORS
 )
-from playermodifier_loader import get_eye_meshes
+# playermodifier_loader is imported lazily inside build_avatar_glb
 
 
 def _submesh_material_category(submesh_name: str, bone_name: str) -> str:
@@ -102,11 +102,20 @@ def load_shared_data(data_dir: str):
     all_anims = parse_all_animations(anim_dir)
     selected_anims = select_best_animations(all_anims)
 
-    # Fill to 17 animations
     mirror_map = {4: 5, 15: 14}  # Shoot R -> L, GK Dive R -> L
     for src_id, dst_id in mirror_map.items():
         if dst_id not in selected_anims and src_id in selected_anims:
             selected_anims[dst_id] = mirror_animation(selected_anims[src_id])
+    fallback_map = {
+        2: 3,
+        13: 0,
+        16: 8,
+        14: 16,
+        15: 14,
+    }
+    for dst_id, src_id in fallback_map.items():
+        if dst_id not in selected_anims and src_id in selected_anims:
+            selected_anims[dst_id] = selected_anims[src_id]
     for missing_id in range(17):
         if missing_id not in selected_anims and 0 in selected_anims:
             selected_anims[missing_id] = selected_anims[0]
@@ -579,10 +588,21 @@ def png_bytes_from_texture(tex: np.ndarray) -> bytes:
 def build_base_glb(skeleton, bone_meshes, selected_anims) -> bytes:
     """Build the base player GLB (no customizations) using a clean rigid hierarchy."""
     builder = GLBBuilder()
-    skin_mat = builder.add_material('skin', [0.82, 0.65, 0.50, 1.0])
-    kit_upper_mat = builder.add_material('kit_upper', [0.90, 0.90, 0.90, 1.0])
-    kit_lower_mat = builder.add_material('kit_lower', [0.85, 0.85, 0.85, 1.0])
-    shoe_mat = builder.add_material('shoe', [0.20, 0.20, 0.20, 1.0])
+    data_dir = find_data_dir()
+
+    # Load textures from game assets (PNG/JPG as they exist in Beta 2)
+    skin_png = load_bmp_as_png_bytes(data_dir, 'skin01.png') if data_dir else None
+    kit_png  = load_bmp_as_png_bytes(data_dir, 'kit_template.png') if data_dir else None
+    shoe_png = load_bmp_as_png_bytes(data_dir, 'shoe.jpg') if data_dir else None
+
+    skin_tex_idx = builder.add_image(skin_png) if skin_png else -1
+    kit_tex_idx  = builder.add_image(kit_png) if kit_png else -1
+    shoe_tex_idx = builder.add_image(shoe_png) if shoe_png else -1
+
+    skin_mat = builder.add_material('skin', [0.82, 0.65, 0.50, 1.0], texture_idx=skin_tex_idx)
+    kit_upper_mat = builder.add_material('kit_upper', [0.90, 0.90, 0.90, 1.0], texture_idx=kit_tex_idx)
+    kit_lower_mat = builder.add_material('kit_lower', [0.85, 0.85, 0.85, 1.0], texture_idx=kit_tex_idx)
+    shoe_mat = builder.add_material('shoe', [0.20, 0.20, 0.20, 1.0], texture_idx=shoe_tex_idx)
 
     bone_nodes = builder.add_skeleton_nodes(skeleton)
 

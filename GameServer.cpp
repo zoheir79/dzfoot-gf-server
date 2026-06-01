@@ -186,8 +186,10 @@ void Server::run() {
     }
 
     // Pre-fill default 4-3-3 formations (avoids empty-team crash)
-    if (sc.left_team.empty()) appendDefault433(sc.left_team, true);
-    if (sc.right_team.empty()) appendDefault433(sc.right_team, false);
+    bool leftControllable = (cfg_.gameMode != 2);
+    bool rightControllable = (cfg_.gameMode == 0);
+    if (sc.left_team.empty()) appendDefault433(sc.left_team, leftControllable);
+    if (sc.right_team.empty()) appendDefault433(sc.right_team, rightControllable);
 
     gameEnv_->start_game();
 
@@ -254,6 +256,7 @@ void Server::run() {
     int broadcastHz = std::min(cfg_.broadcastRateHz, simTicksPerSec);
     if (broadcastHz < 1) broadcastHz = 1;
     const int broadcastSkip = std::max(1, simTicksPerSec / broadcastHz);
+    const int tacticalSkip = std::max(1, simTicksPerSec / 10);
 
     while (running_) {
         if (cfg_.shutdownFlag && !*(cfg_.shutdownFlag)) {
@@ -283,6 +286,10 @@ void Server::run() {
 
         if (tickCounter_ % broadcastSkip == 0) {
             broadcastGameState();
+        }
+        if (tickCounter_ % tacticalSkip == 0) {
+            updateTacticalState();
+            broadcastTacticalState();
         }
 
         // 1 Hz heartbeat (every 60 ticks)
@@ -511,7 +518,7 @@ void Server::tick() {
             EventType et = EVENT_KICK_OFF;
             switch (info.game_mode) {
                 case e_GameMode_KickOff:   et = EVENT_KICK_OFF; break;
-                case e_GameMode_GoalKick:  et = EVENT_FREE_KICK; break; // reuse FREE_KICK slot (no GOAL_KICK in proto)
+                case e_GameMode_GoalKick:  et = EVENT_GOAL_KICK; break;
                 case e_GameMode_Corner:    et = EVENT_CORNER; break;
                 case e_GameMode_FreeKick:  et = EVENT_FREE_KICK; break;
                 case e_GameMode_ThrowIn:   et = EVENT_THROW_IN; break;
@@ -679,6 +686,125 @@ uint8_t Server::deduceAnimId(int playerIndex, int teamId) {
 
 float Server::getHeadingFromDir(float dx, float dz) const {
     return std::atan2(dx, dz); // GF coordinate convention
+}
+
+int Server::findPlayerIndex(Team* team, Player* player) const {
+    if (!team || !player) return 255;
+    const std::vector<Player*>& players = team->GetAllPlayers();
+    for (size_t i = 0; i < players.size() && i < 11; ++i) {
+        if (players[i] == player) return static_cast<int>(i);
+    }
+    return 255;
+}
+
+uint8_t Server::deduceAiIntent(Player* player, TeamAIController* controller, int playerIndex, int teamId) {
+    if (!player || !controller) return TACTICAL_INTENT_NONE;
+    if (player->HasPossession()) return TACTICAL_INTENT_HAS_BALL;
+    if (controller->GetPieceTaker() == player) return TACTICAL_INTENT_SET_PIECE_TAKER;
+    if (controller->GetAttackingRunPlayer() == player) return TACTICAL_INTENT_ATTACKING_RUN;
+    if (controller->GetTeamPressurePlayer() == player) return TACTICAL_INTENT_PRESS;
+    if (controller->GetForwardSupportPlayer() == player) return TACTICAL_INTENT_SUPPORT;
+    if (player->GetManMarking()) return TACTICAL_INTENT_MARK;
+    if (player->GetTimeNeededToGetToBall_ms() < 500) return TACTICAL_INTENT_CHASE_BALL;
+    return TACTICAL_INTENT_HOLD_FORMATION;
+}
+
+void Server::updateTacticalState() {
+    std::memset(&tacticalState_, 0, sizeof(tacticalState_));
+    tacticalState_.tick = tickCounter_;
+    tacticalState_.timestampUs = currentState_.timestampUs;
+    tacticalState_.setPieceTeam = 255;
+    tacticalState_.setPieceTaker = 255;
+    tacticalState_.selectedPlayer[0] = 255;
+    tacticalState_.selectedPlayer[1] = 255;
+    tacticalState_.designatedPlayer[0] = 255;
+    tacticalState_.designatedPlayer[1] = 255;
+    tacticalState_.bestPossessionPlayer[0] = 255;
+    tacticalState_.bestPossessionPlayer[1] = 255;
+    tacticalState_.lastTouchTeam = 255;
+    tacticalState_.lastTouchPlayer = 255;
+    for (int i = 0; i < DZ_MAX_PLAYERS; ++i) {
+        tacticalState_.players[i].targetTeam = 255;
+        tacticalState_.players[i].targetPlayer = 255;
+    }
+    if (!gameEnv_ || !gameEnv_->context || !gameEnv_->context->gameTask) return;
+
+    Match* match = gameEnv_->context->gameTask->GetMatch();
+    if (!match) return;
+
+    tacticalState_.matchPhase = static_cast<uint8_t>(match->GetMatchPhase());
+    tacticalState_.lastTouchTeam = static_cast<uint8_t>(match->GetLastTouchTeamID() >= 0 ? match->GetLastTouchTeamID() : 255);
+    if (match->GetLastTouchTeamID() >= 0) {
+        tacticalState_.lastTouchPlayer = static_cast<uint8_t>(findPlayerIndex(match->GetTeam(match->GetLastTouchTeamID()), match->GetLastTouchPlayer()));
+    }
+
+    for (int t = 0; t < 2; ++t) {
+        Team* team = match->GetTeam(t);
+        if (!team) continue;
+        TeamAIController* controller = team->GetController();
+        tacticalState_.selectedPlayer[t] = static_cast<uint8_t>(findPlayerIndex(team, team->MainSelectedPlayer()));
+        tacticalState_.designatedPlayer[t] = static_cast<uint8_t>(findPlayerIndex(team, team->GetDesignatedTeamPossessionPlayer()));
+        tacticalState_.bestPossessionPlayer[t] = static_cast<uint8_t>(findPlayerIndex(team, team->GetBestPossessionPlayer()));
+        if (controller) {
+            tacticalState_.offsideTrapX[t] = controller->GetOffsideTrapX() / X_FIELD_SCALE;
+            if (controller->GetSetPieceType() != e_GameMode_Normal) {
+                tacticalState_.setPieceType = static_cast<uint8_t>(controller->GetSetPieceType());
+                tacticalState_.setPieceTaker = static_cast<uint8_t>(findPlayerIndex(team, controller->GetPieceTaker()));
+                if (tacticalState_.setPieceTaker != 255) tacticalState_.setPieceTeam = static_cast<uint8_t>(t);
+            }
+        }
+
+        const std::vector<Player*>& players = team->GetAllPlayers();
+        for (size_t i = 0; i < players.size() && i < 11; ++i) {
+            Player* p = players[i];
+            if (!p) continue;
+            int idx = static_cast<int>(t * 11 + i);
+            TacticalPlayerState& out = tacticalState_.players[idx];
+            Vector3 formationTarget = controller ? controller->GetAdaptedFormationPosition(p, true) : p->GetPosition();
+            out.formationTarget[0] = formationTarget.coords[0] / X_FIELD_SCALE;
+            out.formationTarget[1] = formationTarget.coords[1] / Y_FIELD_SCALE;
+            out.formationTarget[2] = formationTarget.coords[2] / Z_FIELD_SCALE;
+            out.targetPos[0] = out.formationTarget[0];
+            out.targetPos[1] = out.formationTarget[1];
+            out.targetPos[2] = out.formationTarget[2];
+            float dx = out.formationTarget[0] - currentState_.players[idx].pos[0];
+            float dz = out.formationTarget[2] - currentState_.players[idx].pos[2];
+            out.formationDistance = std::sqrt(dx * dx + dz * dz);
+            out.stamina01 = std::max(0.0f, std::min(1.0f, 1.0f - currentState_.players[idx].tiredFactor));
+            out.staticRole = static_cast<uint8_t>(p->GetFormationEntry().role);
+            out.dynamicRole = static_cast<uint8_t>(p->GetDynamicFormationEntry().role);
+            out.functionType = static_cast<uint8_t>(p->GetCurrentFunctionType());
+            out.velocityType = static_cast<uint8_t>(p->GetEnumVelocity());
+            out.aiIntent = deduceAiIntent(p, controller, static_cast<int>(i), t);
+            if (p->TouchPending()) out.actionFlags |= 1;
+            if (p->TouchAnim()) out.actionFlags |= 2;
+            if (p->HasPossession()) out.actionFlags |= 4;
+            if (p->ExternalControllerActive()) out.tacticalFlags |= 1;
+            if (!p->ExternalControllerActive()) out.tacticalFlags |= 2;
+            if (p->GetFormationEntry().controllable) out.tacticalFlags |= 4;
+            if (team->MainSelectedPlayer() == p) out.tacticalFlags |= 8;
+            if (team->GetDesignatedTeamPossessionPlayer() == p) out.tacticalFlags |= 16;
+            if (team->GetBestPossessionPlayer() == p) out.tacticalFlags |= 32;
+            if (p->GetManMarking()) {
+                out.targetTeam = static_cast<uint8_t>(1 - t);
+                out.targetPlayer = static_cast<uint8_t>(findPlayerIndex(match->GetTeam(1 - t), p->GetManMarking()));
+            }
+        }
+    }
+}
+
+void Server::broadcastTacticalState() {
+    if (!cfg_.redis || !cfg_.redis->isConfigured()) return;
+    tacticalState_.header.magic = dzfoot::DZ_MAGIC;
+    tacticalState_.header.version = dzfoot::DZ_PROTOCOL_VERSION;
+    tacticalState_.header.type = dzfoot::PACKET_TACTICAL_STATE;
+    tacticalState_.header.size = static_cast<uint16_t>(sizeof(tacticalState_));
+    tacticalState_.header.flags = 0;
+    auto roomBytes = cfg_.roomId.substr(0, 36);
+    std::vector<uint8_t> buf(36 + sizeof(tacticalState_));
+    std::memcpy(buf.data(), roomBytes.c_str(), roomBytes.size());
+    std::memcpy(buf.data() + 36, &tacticalState_, sizeof(tacticalState_));
+    cfg_.redis->publishBinary("gf.tactical", buf.data(), buf.size());
 }
 
 void Server::broadcastGameState() {
