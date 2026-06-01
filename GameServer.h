@@ -13,6 +13,9 @@
 
 class GameEnv;
 class RedisClient;
+class Player;
+class Team;
+class TeamAIController;
 
 namespace GameServer {
 
@@ -123,8 +126,8 @@ private:
 
     // Animation deduction from GF internal state
     uint8_t deduceAnimId(int playerIndex, int teamId);
-    uint8_t deduceAiIntent(class Player* player, class TeamAIController* controller, int playerIndex, int teamId);
-    int findPlayerIndex(class Team* team, class Player* player) const;
+    uint8_t deduceAiIntent(::Player* player, ::TeamAIController* controller, int playerIndex, int teamId);
+    int findPlayerIndex(::Team* team, ::Player* player) const;
 
     // Helpers
     float getHeadingFromDir(float dx, float dz) const;
