@@ -366,8 +366,12 @@ void Server::tick() {
                 if (idx >= kMaxPlayers) break;
                 const PlayerInfo& pi = src[i];
                 NetworkPlayerState& ps = currentState_.players[idx];
-                ps.pos[0] = pi.player_position.env_coord(0);
-                ps.pos[1] = pi.player_position.env_coord(1);
+                
+                // Un-mirror Team 1 coordinates because GameplayFootball mirrors team 1 internally
+                float mirrorScale = (teamId == 1) ? -1.0f : 1.0f;
+                
+                ps.pos[0] = pi.player_position.env_coord(0) * mirrorScale;
+                ps.pos[1] = pi.player_position.env_coord(1) * mirrorScale;
                 ps.pos[2] = pi.player_position.env_coord(2);
                 ps.team = static_cast<uint8_t>(teamId);
                 ps.role = static_cast<uint8_t>(pi.role);
@@ -394,10 +398,15 @@ void Server::tick() {
                     }
                 }
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
-                    // fallback to scaled SharedInfo
-                    ps.dir[0] = pi.player_direction.env_coord(0);
-                    ps.dir[1] = pi.player_direction.env_coord(1);
+                    // fallback to scaled SharedInfo (which is already mirrored for Team 1 by GF)
+                    ps.dir[0] = pi.player_direction.env_coord(0) * mirrorScale;
+                    ps.dir[1] = pi.player_direction.env_coord(1) * mirrorScale;
                     ps.dir[2] = pi.player_direction.env_coord(2);
+                } else if (teamId == 1) {
+                    // If we got the raw unscaled direction, we still need to unmirror it
+                    // because Team 1 inputs/directions are also mirrored in GF's unmirrored coordinates representation
+                    ps.dir[0] *= mirrorScale;
+                    ps.dir[1] *= mirrorScale;
                 }
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
 
