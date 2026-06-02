@@ -367,11 +367,15 @@ void Server::tick() {
                 const PlayerInfo& pi = src[i];
                 NetworkPlayerState& ps = currentState_.players[idx];
                 
-                // Un-mirror Team 1 coordinates because GameplayFootball mirrors team 1 internally
+                // NOTE: Match::GetTeamState already calls position.Mirror() for team 1,
+                // so pi.player_position is ALREADY the true on-field coordinate. Do NOT
+                // multiply position by mirrorScale (that double-mirrors team 1 back onto
+                // team 0's half). mirrorScale is only used below for the RAW (unmirrored)
+                // GetDirectionVec direction vector.
                 float mirrorScale = (teamId == 1) ? -1.0f : 1.0f;
-                
-                ps.pos[0] = pi.player_position.env_coord(0) * mirrorScale;
-                ps.pos[1] = pi.player_position.env_coord(1) * mirrorScale;
+
+                ps.pos[0] = pi.player_position.env_coord(0);
+                ps.pos[1] = pi.player_position.env_coord(1);
                 ps.pos[2] = pi.player_position.env_coord(2);
                 ps.team = static_cast<uint8_t>(teamId);
                 ps.role = static_cast<uint8_t>(pi.role);
@@ -398,9 +402,10 @@ void Server::tick() {
                     }
                 }
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
-                    // fallback to scaled SharedInfo (which is already mirrored for Team 1 by GF)
-                    ps.dir[0] = pi.player_direction.env_coord(0) * mirrorScale;
-                    ps.dir[1] = pi.player_direction.env_coord(1) * mirrorScale;
+                    // fallback: pi.player_direction is ALREADY mirrored by GetTeamState,
+                    // so copy directly without *mirrorScale (which would double-mirror).
+                    ps.dir[0] = pi.player_direction.env_coord(0);
+                    ps.dir[1] = pi.player_direction.env_coord(1);
                     ps.dir[2] = pi.player_direction.env_coord(2);
                 } else if (teamId == 1) {
                     // If we got the raw unscaled direction, we still need to unmirror it
