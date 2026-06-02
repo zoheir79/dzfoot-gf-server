@@ -367,16 +367,18 @@ void Server::tick() {
                 const PlayerInfo& pi = src[i];
                 NetworkPlayerState& ps = currentState_.players[idx];
                 
-                // NOTE: Match::GetTeamState already calls position.Mirror() for team 1,
-                // so pi.player_position is ALREADY the true on-field coordinate. Do NOT
-                // multiply position by mirrorScale (that double-mirrors team 1 back onto
-                // team 0's half). mirrorScale is only used below for the RAW (unmirrored)
-                // GetDirectionVec direction vector.
+                // Match::GetTeamState calls position.Mirror() for team 1, which places
+                // team 1 on the LEFT half (same side as team 0). We must UN-mirror
+                // with mirrorScale so team 1 appears on the RIGHT half for the client.
                 float mirrorScale = (teamId == 1) ? -1.0f : 1.0f;
 
-                ps.pos[0] = pi.player_position.env_coord(0);
-                ps.pos[1] = pi.player_position.env_coord(1);
+                ps.pos[0] = pi.player_position.env_coord(0) * mirrorScale;
+                ps.pos[1] = pi.player_position.env_coord(1) * mirrorScale;
                 ps.pos[2] = pi.player_position.env_coord(2);
+
+                // Clamp Y to playable field width (touchlines at ±0.42 env coords).
+                // Small margin prevents players visually intersecting the touchline.
+                ps.pos[1] = std::clamp(ps.pos[1], -0.40f, 0.40f);
                 ps.team = static_cast<uint8_t>(teamId);
                 ps.role = static_cast<uint8_t>(pi.role);
                 ps.tiredFactor = pi.tired_factor;
@@ -402,17 +404,15 @@ void Server::tick() {
                     }
                 }
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
-                    // fallback: pi.player_direction is ALREADY mirrored by GetTeamState,
-                    // so copy directly without *mirrorScale (which would double-mirror).
-                    ps.dir[0] = pi.player_direction.env_coord(0);
-                    ps.dir[1] = pi.player_direction.env_coord(1);
+                    // fallback: pi.player_direction is ALREADY mirrored by GetTeamState
+                    // (team 1 internal -X becomes +X). Un-mirror so team 1 faces correct way.
+                    ps.dir[0] = pi.player_direction.env_coord(0) * mirrorScale;
+                    ps.dir[1] = pi.player_direction.env_coord(1) * mirrorScale;
                     ps.dir[2] = pi.player_direction.env_coord(2);
-                } else if (teamId == 1) {
-                    // If we got the raw unscaled direction, we still need to unmirror it
-                    // because Team 1 inputs/directions are also mirrored in GF's unmirrored coordinates representation
-                    ps.dir[0] *= mirrorScale;
-                    ps.dir[1] *= mirrorScale;
                 }
+                // Note: raw GetDirectionVec() gives internal (unmirrored) direction.
+                // Team 1 internal dir is already correct (-X for attacking left), so
+                // NO extra mirrorScale needed for raw path.
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
 
                 // Compute velocity by differentiating position (env coords / tick)
