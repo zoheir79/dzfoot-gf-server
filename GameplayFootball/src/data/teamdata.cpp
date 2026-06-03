@@ -309,6 +309,7 @@ TeamData::TeamData(int teamDatabaseID, const std::vector<FormationEntry> &f) {
       formation[x].start_position = formation[x].position;
     } else {
       formation[x].start_position = f[x].start_position;
+      formation[x].position = f[x].start_position;  // override hardcoded wide defaults
       formation[x].lazy = f[x].lazy;
       formation[x].role = f[x].role;
       formation[x].controllable = f[x].controllable;

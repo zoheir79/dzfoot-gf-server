@@ -5,32 +5,32 @@
     "name": "Algeria",
     "formation": [
       {"role": "GK", "x": -1.0,  "y": 0.0,   "controllable": true},
-      {"role": "LB", "x": -0.7,  "y": 0.75,  "controllable": true},
+      {"role": "LB", "x": -0.7,  "y": 0.55,  "controllable": true},
       {"role": "CB", "x": -1.0,  "y": 0.25,  "controllable": true},
       {"role": "CB", "x": -1.0,  "y": -0.25, "controllable": true},
-      {"role": "RB", "x": -0.7,  "y": -0.75, "controllable": true},
-      {"role": "CM", "x": 0.0,   "y": 0.5,   "controllable": true},
+      {"role": "RB", "x": -0.7,  "y": -0.55, "controllable": true},
+      {"role": "CM", "x": 0.0,   "y": 0.32,  "controllable": true},
       {"role": "CM", "x": -0.2,  "y": 0.0,   "controllable": true},
-      {"role": "CM", "x": 0.0,   "y": -0.5,  "controllable": true},
-      {"role": "LM", "x": 0.6,   "y": 0.75,  "controllable": true},
+      {"role": "CM", "x": 0.0,   "y": -0.32, "controllable": true},
+      {"role": "LM", "x": 0.6,   "y": 0.60,  "controllable": true},
       {"role": "CF", "x": 1.0,   "y": 0.0,   "controllable": true},
-      {"role": "RM", "x": 0.6,   "y": -0.75, "controllable": true}
+      {"role": "RM", "x": 0.6,   "y": -0.60, "controllable": true}
     ]
   },
   "right_team": {
     "name": "France",
     "formation": [
       {"role": "GK", "x": -1.0,  "y": 0.0,   "controllable": true},
-      {"role": "LB", "x": -0.7,  "y": 0.75,  "controllable": true},
+      {"role": "LB", "x": -0.7,  "y": 0.55,  "controllable": true},
       {"role": "CB", "x": -1.0,  "y": 0.25,  "controllable": true},
       {"role": "CB", "x": -1.0,  "y": -0.25, "controllable": true},
-      {"role": "RB", "x": -0.7,  "y": -0.75, "controllable": true},
-      {"role": "CM", "x": 0.0,   "y": 0.5,   "controllable": true},
+      {"role": "RB", "x": -0.7,  "y": -0.55, "controllable": true},
+      {"role": "CM", "x": 0.0,   "y": 0.32,  "controllable": true},
       {"role": "CM", "x": -0.2,  "y": 0.0,   "controllable": true},
-      {"role": "CM", "x": 0.0,   "y": -0.5,  "controllable": true},
-      {"role": "LM", "x": 0.6,   "y": 0.75,  "controllable": true},
+      {"role": "CM", "x": 0.0,   "y": -0.32, "controllable": true},
+      {"role": "LM", "x": 0.6,   "y": 0.60,  "controllable": true},
       {"role": "CF", "x": 1.0,   "y": 0.0,   "controllable": true},
-      {"role": "RM", "x": 0.6,   "y": -0.75, "controllable": true}
+      {"role": "RM", "x": 0.6,   "y": -0.60, "controllable": true}
     ]
   }
 }

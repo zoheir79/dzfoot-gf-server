@@ -7,14 +7,14 @@
       {"role": "GK", "x": -1.0, "y": 0.0, "controllable": true},
       {"role": "CB", "x": -1.0, "y": 0.25, "controllable": false},
       {"role": "CB", "x": -1.0, "y": -0.25, "controllable": false},
-      {"role": "LB", "x": -0.7, "y": 0.75, "controllable": false},
-      {"role": "RB", "x": -0.7, "y": -0.75, "controllable": false},
-      {"role": "CM", "x": 0.0, "y": 0.5, "controllable": true},
+      {"role": "LB", "x": -0.7, "y": 0.55, "controllable": false},
+      {"role": "RB", "x": -0.7, "y": -0.55, "controllable": false},
+      {"role": "CM", "x": 0.0, "y": 0.32, "controllable": true},
       {"role": "CM", "x": -0.2, "y": 0.0, "controllable": true},
-      {"role": "CM", "x": 0.0, "y": -0.5, "controllable": true},
-      {"role": "LM", "x": 0.6, "y": 0.75, "controllable": true},
+      {"role": "CM", "x": 0.0, "y": -0.32, "controllable": true},
+      {"role": "LM", "x": 0.6, "y": 0.60, "controllable": true},
       {"role": "CF", "x": 1.0, "y": 0.0, "controllable": true},
-      {"role": "RM", "x": 0.6, "y": -0.75, "controllable": true}
+      {"role": "RM", "x": 0.6, "y": -0.60, "controllable": true}
     ],
     "players": [
       {"name": "Mbolhi",  "position": "GK", "number": 23, "skills": {"physical_balance":0.75,"physical_reaction":0.82,"physical_acceleration":0.72,"physical_velocity":0.70,"physical_stamina":0.82,"physical_agility":0.70,"physical_shotpower":0.60,"technical_standingtackle":0.88,"technical_slidingtackle":0.65,"technical_ballcontrol":0.55,"technical_dribble":0.45,"technical_shortpass":0.60,"technical_highpass":0.55,"technical_header":0.50,"technical_shot":0.40,"technical_volley":0.30,"mental_calmness":0.85,"mental_workrate":0.80,"mental_resilience":0.88,"mental_defensivepositioning":0.92,"mental_offensivepositioning":0.20,"mental_vision":0.70}},
@@ -36,14 +36,14 @@
       {"role": "GK", "x": 1.0, "y": 0.0, "controllable": true},
       {"role": "CB", "x": 1.0, "y": 0.25, "controllable": false},
       {"role": "CB", "x": 1.0, "y": -0.25, "controllable": false},
-      {"role": "LB", "x": 0.7, "y": 0.75, "controllable": false},
-      {"role": "RB", "x": 0.7, "y": -0.75, "controllable": false},
-      {"role": "CM", "x": 0.0, "y": 0.5, "controllable": true},
+      {"role": "LB", "x": 0.7, "y": 0.55, "controllable": false},
+      {"role": "RB", "x": 0.7, "y": -0.55, "controllable": false},
+      {"role": "CM", "x": 0.0, "y": 0.32, "controllable": true},
       {"role": "CM", "x": 0.2, "y": 0.0, "controllable": true},
-      {"role": "CM", "x": 0.0, "y": -0.5, "controllable": true},
-      {"role": "LM", "x": -0.6, "y": 0.75, "controllable": true},
+      {"role": "CM", "x": 0.0, "y": -0.32, "controllable": true},
+      {"role": "LM", "x": -0.6, "y": 0.60, "controllable": true},
       {"role": "CF", "x": -1.0, "y": 0.0, "controllable": true},
-      {"role": "RM", "x": -0.6, "y": -0.75, "controllable": true}
+      {"role": "RM", "x": -0.6, "y": -0.60, "controllable": true}
     ],
     "players": [
       {"name": "Saichi",    "position": "GK", "number": 1,  "skills": {"physical_balance":0.78,"physical_reaction":0.85,"physical_acceleration":0.72,"physical_velocity":0.70,"physical_stamina":0.82,"physical_agility":0.74,"physical_shotpower":0.65,"technical_standingtackle":0.82,"technical_slidingtackle":0.62,"technical_ballcontrol":0.62,"technical_dribble":0.50,"technical_shortpass":0.68,"technical_highpass":0.60,"technical_header":0.58,"technical_shot":0.45,"technical_volley":0.35,"mental_calmness":0.82,"mental_workrate":0.80,"mental_resilience":0.85,"mental_defensivepositioning":0.85,"mental_offensivepositioning":0.28,"mental_vision":0.72}},

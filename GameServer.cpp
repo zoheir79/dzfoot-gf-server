@@ -47,7 +47,8 @@ static void copyString(char* dst, size_t dstLen, const std::string& src) {
 // Used to populate ScenarioConfig::{left,right}_team before start_game() so that
 // Match::GetState() can resize SharedInfo controller vectors safely.
 static void appendDefault433(std::vector<FormationEntry>& dst, bool controllable, bool mirror) {
-    // (x, y, role, lazy, controllable). y will be flipped internally by FORMATION_Y_SCALE.
+    // (x, y, role, lazy, controllable). These match GameplayFootball Beta 2
+    // defaults from teamdata.cpp hardcoded formation XML.
     const float sx = mirror ? -1.0f : 1.0f;
     const float sy = mirror ? -1.0f : 1.0f;
     dst.emplace_back(sx * -1.0f, sy *  0.00f, e_PlayerRole_GK, false, controllable);
@@ -376,9 +377,11 @@ void Server::tick() {
                 ps.pos[1] = pi.player_position.env_coord(1) * mirrorScale;
                 ps.pos[2] = pi.player_position.env_coord(2);
 
-                // Clamp Y to playable field width (touchlines at ±0.42 env coords).
-                // Small margin prevents players visually intersecting the touchline.
-                ps.pos[1] = std::clamp(ps.pos[1], -0.40f, 0.40f);
+                // Clamp Y to the true GF touchline (±0.42 env coords, per
+                // Y_FIELD_SCALE=-83.6). The previous ±0.40 clamp truncated all
+                // wide players to a single line ~2m inside the touchline, making
+                // them appear glued together on the sideline. Use the real limit.
+                ps.pos[1] = std::clamp(ps.pos[1], -0.42f, 0.42f);
                 ps.team = static_cast<uint8_t>(teamId);
                 ps.role = static_cast<uint8_t>(pi.role);
                 ps.tiredFactor = pi.tired_factor;
@@ -622,8 +625,35 @@ uint8_t Server::deduceAnimId(int playerIndex, int teamId) {
 
     e_FunctionType ft = p->GetCurrentFunctionType();
     e_Velocity vel = p->GetEnumVelocity();
+    bool hasBall = p->HasPossession();
     bool isGK = (currentState_.players[teamId * 11 + playerIndex].role == e_PlayerRole_GK);
     Ball* ball = match->GetBall();
+
+    // Helper: map movement velocity to visual locomotion anim based on ball possession.
+    // GF's "dribble" velocity (~3.5 m/s) and "walk" velocity (~5.0 m/s) are both RUN
+    // visually when the player does NOT have the ball. Only when controlling the
+    // ball do we show DRIBBLE for these moderate speeds.
+    auto movementAnim = [&](e_Velocity v) -> uint8_t {
+        if (hasBall) {
+            // With ball: any non-idle movement is dribbling
+            switch (v) {
+                case e_Velocity_Idle:    return ANIM_DRIBBLE; // standing with ball at feet
+                case e_Velocity_Dribble: return ANIM_DRIBBLE; // ~3.5 m/s with ball
+                case e_Velocity_Walk:    return ANIM_DRIBBLE; // ~5.0 m/s with ball
+                case e_Velocity_Sprint:  return ANIM_DRIBBLE; // rare but clamp to dribble
+                default:                 return ANIM_DRIBBLE;
+            }
+        } else {
+            // Without ball: interpret GF velocity as real-world locomotion
+            switch (v) {
+                case e_Velocity_Idle:    return ANIM_IDLE;    // 0 m/s
+                case e_Velocity_Dribble: return ANIM_RUN;     // ~3.5 m/s = moderate run
+                case e_Velocity_Walk:    return ANIM_RUN;     // ~5.0 m/s = normal run (NOT walk!)
+                case e_Velocity_Sprint:  return ANIM_SPRINT;  // ~8.0 m/s = sprint
+                default:                 return ANIM_IDLE;
+            }
+        }
+    };
 
     // --- GOALKEEPER ---
     if (isGK) {
@@ -641,63 +671,51 @@ uint8_t Server::deduceAnimId(int playerIndex, int teamId) {
             }
             default: break;
         }
-        // Default: use velocity-based animation for GK (no diving when just moving)
+        // GK locomotion: idle for all non-action states
         switch (vel) {
-            case e_Velocity_Idle:   return ANIM_GK_IDLE;
-            case e_Velocity_Walk:   return ANIM_GK_IDLE;
+            case e_Velocity_Idle:    return ANIM_GK_IDLE;
+            case e_Velocity_Walk:    return ANIM_GK_IDLE;
             case e_Velocity_Dribble: return ANIM_GK_IDLE;
-            case e_Velocity_Sprint: return ANIM_GK_IDLE;
+            case e_Velocity_Sprint:  return ANIM_GK_IDLE;
             default: break;
         }
         return ANIM_GK_IDLE;
     }
 
-    // --- FIELD PLAYERS by function type ---
+    // --- FIELD PLAYERS: action-type animations (override locomotion) ---
     switch (ft) {
         case e_FunctionType_Shot: {
-            // Approximate foot from direction relative to goal
+            // Heuristic: choose foot based on shooting direction vs dominant foot
             Vector3 dir = p->GetDirectionVec();
-            // For team 0 (left) shooting right: positive X means right-foot-like
-            // This is a heuristic; dominant foot alternates by player index
             bool rightFoot = (playerIndex % 2 == 0);
-            if ((teamId == 0 && dir.coords[0] > 0.0f) ||
-                (teamId == 1 && dir.coords[0] < 0.0f)) {
-                return rightFoot ? ANIM_SHOOT_R : ANIM_SHOOT_L;
-            }
+            bool shootingRight = (teamId == 0 && dir.coords[0] > 0.0f) ||
+                                 (teamId == 1 && dir.coords[0] < 0.0f);
+            if (shootingRight) return rightFoot ? ANIM_SHOOT_R : ANIM_SHOOT_L;
             return rightFoot ? ANIM_SHOOT_L : ANIM_SHOOT_R;
         }
         case e_FunctionType_ShortPass:  return ANIM_PASS_S;
         case e_FunctionType_LongPass:
         case e_FunctionType_HighPass:   return ANIM_PASS_L;
         case e_FunctionType_Header:     return ANIM_HEADER;
-        case e_FunctionType_Trap:
-        case e_FunctionType_BallControl: {
-            // Only show DRIBBLE if player actually has the ball
-            bool hasPossession = p->HasPossession();
-            if (vel == e_Velocity_Idle) return hasPossession ? ANIM_DRIBBLE : ANIM_IDLE;
-            if (vel == e_Velocity_Dribble) return hasPossession ? ANIM_DRIBBLE : ANIM_RUN;
-            if (vel == e_Velocity_Walk) return ANIM_WALK;
-            if (vel == e_Velocity_Sprint) return ANIM_SPRINT;
-            return ANIM_RUN;
-        }
         case e_FunctionType_Sliding:    return ANIM_TACKLE;
         case e_FunctionType_Trip:       return ANIM_FALL;
         case e_FunctionType_Deflect:
-        case e_FunctionType_Interfere: {
-            return ANIM_TACKLE;
-        }
+        case e_FunctionType_Interfere:  return ANIM_TACKLE;
         case e_FunctionType_Special:    return ANIM_CELEBRATE;
-        default: break;
+
+        // Trap/BallControl are transitional: show dribble if controlling the ball,
+        // otherwise fall back to normal locomotion (running toward the ball).
+        case e_FunctionType_Trap:
+        case e_FunctionType_BallControl: {
+            if (hasBall) return ANIM_DRIBBLE;
+            return movementAnim(vel);
+        }
+
+        default: break; // e_FunctionType_Movement falls through to locomotion logic
     }
 
-    // Default by velocity
-    switch (vel) {
-        case e_Velocity_Idle:    return ANIM_IDLE;
-        case e_Velocity_Dribble: return ANIM_DRIBBLE;
-        case e_Velocity_Walk:    return ANIM_WALK;
-        case e_Velocity_Sprint:  return ANIM_SPRINT;
-    }
-    return ANIM_IDLE;
+    // --- FIELD PLAYERS: default locomotion (e_FunctionType_Movement) ---
+    return movementAnim(vel);
 }
 
 float Server::getHeadingFromDir(float dx, float dz) const {

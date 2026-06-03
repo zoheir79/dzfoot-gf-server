@@ -177,6 +177,19 @@ def classify_animation(clip: AnimClip, filepath: str) -> int:
     fname = os.path.basename(filepath).lower()
     path_lower = filepath.lower().replace('\\', '/')
 
+    # Pure-cycle templates have no <type> XML tag; classify by filename
+    if 'templates/' in path_lower:
+        if 'idle' in fname:
+            return 0
+        elif 'sprint' in fname:
+            return 3
+        elif 'walk' in fname:
+            return 1
+        elif 'dribble' in fname:
+            return 10
+        else:
+            return 0
+
     if 'movement_special/' in path_lower:
         return 12
 
@@ -245,16 +258,17 @@ def animation_selection_score(anim_id: int, path: str, clip: AnimClip) -> tuple:
     p = path.lower().replace('\\', '/')
     keyframes = sum(len(t.keyframes) for t in clip.tracks.values())
     preferred = {
-        0: ['movement/idle/000_idlelevel1.anim', 'ballcontrol/idle/000.anim', 'movement/idle/000_accel.anim'],
-        1: ['movement/walk/000.anim', 'movement/walk/045.anim', 'ballcontrol/walk/000.anim'],
-        2: ['movement/sprint/000_idlelevel1.anim', 'movement/sprint/000_decel_decel_decel_todo.anim'],
-        3: ['movement/sprint/000_idlelevel1.anim', 'ballcontrol/sprint/000.anim', 'movement/sprint/135_decel_decel_decel.anim'],
-        4: ['shot/', 'shot/sprint/'],
+        # Locomotion: pure-cycle templates FIRST (not directional transitions)
+        0: ['templates/idleD000.anim', 'movement/idle/000_idlelevel1.anim', 'ballcontrol/idle/000.anim'],
+        1: ['templates/walkD000.anim', 'movement/walk/000.anim', 'ballcontrol/walk/000.anim'],
+        2: ['templates/walkD000.anim', 'movement/walk/000.anim'],  # run = walk sped up
+        3: ['templates/sprintD000.anim', 'ballcontrol/sprint/000.anim', 'movement/sprint/000_idlelevel1.anim'],
+        4: ['shot/sprint/010_close.anim', 'shot/sprint/030.anim', 'shot/sprint/090_2step.anim', 'shot/'],  # frontal shot for clean mirror
         6: ['pass/walk/', 'pass/idle/', 'pass/sprint/'],
         7: ['highpass/walk/', 'highpass/idle/', 'longpass/'],
         8: ['deflect/idle/', 'deflect/walk/'],
         9: ['sliding/sprint/', 'sliding/walk/'],
-        10: ['movement/dribble/135.anim', 'movement/dribble/045_decel.anim', 'ballcontrol/walk/000.anim'],
+        10: ['templates/dribbleD000.anim', 'movement/dribble/135.anim', 'ballcontrol/walk/000.anim'],
         11: ['trip/'],
         12: ['celebration/', 'movement_special/idle/special/000_stand_up_from_front.anim'],
         16: ['catch/'],
@@ -270,6 +284,9 @@ def animation_selection_score(anim_id: int, path: str, clip: AnimClip) -> tuple:
         penalty += 10
     if anim_id == 10 and ('trap/' in p or 'highballs' in p):
         penalty += 5
+    # Other templates are still preferred for locomotion
+    if 'templates/' in p and anim_id in (0, 1, 2, 3, 10):
+        rank = -1
     return (-penalty, -rank, keyframes)
 
 
@@ -290,5 +307,26 @@ def select_best_animations(animations: Dict[str, AnimClip]) -> Dict[int, AnimCli
             selected[anim_id] = best[1]
             print(f"  [ANIM] id={anim_id:2d} -> {best[0]} "
                   f"({sum(len(t.keyframes) for t in best[1].tracks.values())} kf)")
+
+    # Force exact D000 templates for locomotion (pure cycles, not directional transitions)
+    template_overrides = {
+        0: 'idleD000.anim',
+        1: 'walkD000.anim',
+        3: 'sprintD000.anim',
+        10: 'dribbleD000.anim',
+    }
+    for target_id, tmpl_name in template_overrides.items():
+        for path, clip in animations.items():
+            if tmpl_name in path:
+                selected[target_id] = clip
+                print(f"  [ANIM] id={target_id:2d} -> {path} (TEMPLATE OVERRIDE)")
+                break
+
+    # Run has no native template; reuse walk cycle with different name
+    if 1 in selected and 2 not in selected:
+        import copy
+        selected[2] = copy.deepcopy(selected[1])
+        selected[2].name = "run"
+        print(f"  [ANIM] id= 2 -> run (copy of walkD000, sped up at runtime)")
 
     return selected

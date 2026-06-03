@@ -107,11 +107,10 @@ def load_shared_data(data_dir: str):
         if dst_id not in selected_anims and src_id in selected_anims:
             selected_anims[dst_id] = mirror_animation(selected_anims[src_id])
     fallback_map = {
-        2: 3,
-        13: 0,
-        16: 8,
-        14: 16,
-        15: 14,
+        13: 0,   # gk_idle -> idle
+        16: 8,   # gk_catch -> header (no native catch anim)
+        14: 16,  # gk_dive_l -> gk_catch
+        15: 14,  # gk_dive_r -> gk_dive_l
     }
     for dst_id, src_id in fallback_map.items():
         if dst_id not in selected_anims and src_id in selected_anims:
