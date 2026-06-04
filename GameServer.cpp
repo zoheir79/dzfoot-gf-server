@@ -398,6 +398,7 @@ void Server::tick() {
                 Player* p = players[i];
                 if (!p) continue;
                 NetworkPlayerState& ps = currentState_.players[idx];
+                Vector3 pos = p->GetPosition();
 
                 // We read the stable world environment coordinates directly from the engine's GetTeamState
                 // exported in `info`. This is 100% stable, handles goalkeeper and set-piece resets perfectly,
@@ -409,7 +410,6 @@ void Server::tick() {
                     ps.pos[1] = pi.player_position.env_coord(1);
                     ps.pos[2] = pi.player_position.env_coord(2);
                 } else {
-                    Vector3 pos = p->GetPosition();
                     ps.pos[0] = pos.coords[0] / X_FIELD_SCALE * mirrorScale;
                     ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE * mirrorScale;
                     ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
