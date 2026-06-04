@@ -47,27 +47,42 @@ static void copyString(char* dst, size_t dstLen, const std::string& src) {
 // Used to populate ScenarioConfig::{left,right}_team before start_game() so that
 // Match::GetState() can resize SharedInfo controller vectors safely.
 static void appendDefault433(std::vector<FormationEntry>& dst, bool controllable, bool mirror) {
-    // (x, y, role, lazy, controllable). These match GameplayFootball Beta 2
-    // defaults from teamdata.cpp hardcoded formation XML.
+    // Raw formation coordinates (same as teamdata.cpp XML parsing).
+    // We must NOT use FormationEntry(x,y,...) constructor because it
+    // multiplies y by FORMATION_Y_SCALE=-2.36, but teamdata.cpp overwrites
+    // the 'position' member directly with raw XML vectors when f is empty.
+    // Using the constructor causes positions to be 2.36x too large in Y,
+    // pushing wingers (LB/RB/LM/RM) outside pitchHalfH=36 at kickoff.
     const float sx = mirror ? -1.0f : 1.0f;
     const float sy = mirror ? -1.0f : 1.0f;
-    dst.emplace_back(sx * -1.0f, sy *  0.00f, e_PlayerRole_GK, false, controllable);
-    dst.emplace_back(sx * -0.7f, sy *  0.75f, e_PlayerRole_LB, false, controllable);
-    dst.emplace_back(sx * -1.0f, sy *  0.25f, e_PlayerRole_CB, false, controllable);
-    dst.emplace_back(sx * -1.0f, sy * -0.25f, e_PlayerRole_CB, false, controllable);
-    dst.emplace_back(sx * -0.7f, sy * -0.75f, e_PlayerRole_RB, false, controllable);
-    dst.emplace_back(sx *  0.0f, sy *  0.50f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back(sx * -0.2f, sy *  0.00f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back(sx *  0.0f, sy * -0.50f, e_PlayerRole_CM, false, controllable);
-    dst.emplace_back(sx *  0.6f, sy *  0.75f, e_PlayerRole_LM, false, controllable);
-    dst.emplace_back(sx *  1.0f, sy *  0.00f, e_PlayerRole_CF, false, controllable);
-    dst.emplace_back(sx *  0.6f, sy * -0.75f, e_PlayerRole_RM, false, controllable);
+    auto add = [&](float x, float y, e_PlayerRole role) {
+        FormationEntry fe;
+        fe.position = Vector3(sx * x, sy * y, 0);
+        fe.start_position = fe.position;
+        fe.role = role;
+        fe.lazy = false;
+        fe.controllable = controllable;
+        dst.push_back(fe);
+    };
+    add(-1.0f,  0.00f, e_PlayerRole_GK);
+    add(-0.7f,  0.75f, e_PlayerRole_LB);
+    add(-1.0f,  0.25f, e_PlayerRole_CB);
+    add(-1.0f, -0.25f, e_PlayerRole_CB);
+    add(-0.7f, -0.75f, e_PlayerRole_RB);
+    add( 0.0f,  0.50f, e_PlayerRole_CM);
+    add(-0.2f,  0.00f, e_PlayerRole_CM);
+    add( 0.0f, -0.50f, e_PlayerRole_CM);
+    add( 0.6f,  0.75f, e_PlayerRole_LM);
+    add( 1.0f,  0.00f, e_PlayerRole_CF);
+    add( 0.6f, -0.75f, e_PlayerRole_RM);
 }
 
 // ------------------------------------------------------------------
 // Server
 // ------------------------------------------------------------------
 Server::Server(const Config& cfg) : cfg_(cfg) {
+    std::memset(&currentState_, 0, sizeof(currentState_));
+    std::memset(&previousState_, 0, sizeof(previousState_));
     currentState_.timer = 0.0f;
     currentState_.tick = 0;
     currentState_.gameMode = 0;
@@ -361,66 +376,83 @@ void Server::tick() {
         }
 
         // --- Players state ---
-        auto fillTeam = [&](const std::vector<PlayerInfo>& src, int teamId, int baseIdx) {
-            for (size_t i = 0; i < src.size() && i < 11; ++i) {
+        auto fillTeam = [&](int teamId, int baseIdx) {
+            Match* m = gameEnv_->context->gameTask->GetMatch();
+            if (!m) return;
+            Team* t = m->GetTeam(teamId);
+            if (!t) return;
+            std::vector<Player*> players;
+            t->GetAllPlayers(players);
+            
+            // Ultimate Mirroring Equation: we want the final world coordinate to match the dynamic side
+            // (Left side = 1.0f, Right side = -1.0f). But the engine's Match::Step() dynamically mirrors/un-mirrors
+            // Team 1's position in memory (leaving them mirrored when IsInPlay() is true, and un-mirrored when false).
+            // By multiplying the desired side scale with the current memory mirror state, we obtain a 100% stable scale.
+            float sideScale = (t->GetDynamicSide() == -1) ? 1.0f : -1.0f;
+            float memoryScale = t->isMirrored() ? -1.0f : 1.0f;
+            float mirrorScale = sideScale * memoryScale;
+
+            for (size_t i = 0; i < players.size() && i < 11; ++i) {
                 int idx = baseIdx + static_cast<int>(i);
                 if (idx >= kMaxPlayers) break;
-                const PlayerInfo& pi = src[i];
+                Player* p = players[i];
+                if (!p) continue;
                 NetworkPlayerState& ps = currentState_.players[idx];
-                
-                // Match::GetTeamState calls position.Mirror() for team 1, which places
-                // team 1 on the LEFT half (same side as team 0). We must UN-mirror
-                // with mirrorScale so team 1 appears on the RIGHT half for the client.
-                float mirrorScale = (teamId == 1) ? -1.0f : 1.0f;
 
-                ps.pos[0] = pi.player_position.env_coord(0) * mirrorScale;
-                ps.pos[1] = pi.player_position.env_coord(1) * mirrorScale;
-                ps.pos[2] = pi.player_position.env_coord(2);
+                // We read the stable world environment coordinates directly from the engine's GetTeamState
+                // exported in `info`. This is 100% stable, handles goalkeeper and set-piece resets perfectly,
+                // and completely avoids any C++ raw memory mirroring/unmirroring glitches.
+                const std::vector<PlayerInfo>& teamInfos = (teamId == 0) ? info.left_team : info.right_team;
+                if (i < teamInfos.size()) {
+                    const PlayerInfo& pi = teamInfos[i];
+                    ps.pos[0] = pi.player_position.env_coord(0);
+                    ps.pos[1] = pi.player_position.env_coord(1);
+                    ps.pos[2] = pi.player_position.env_coord(2);
+                } else {
+                    Vector3 pos = p->GetPosition();
+                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE * mirrorScale;
+                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE * mirrorScale;
+                    ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
+                }
 
-                // Clamp Y to the true GF touchline (±0.42 env coords, per
-                // Y_FIELD_SCALE=-83.6). The previous ±0.40 clamp truncated all
-                // wide players to a single line ~2m inside the touchline, making
-                // them appear glued together on the sideline. Use the real limit.
-                ps.pos[1] = std::clamp(ps.pos[1], -0.42f, 0.42f);
+                // Diagnostic: log players that exceed expected GF pitch bounds
+                if (std::abs(ps.pos[0]) > 1.05f || std::abs(ps.pos[1]) > 0.43f) {
+                    static int exceedLogCounter = 0;
+                    if (exceedLogCounter++ < 50) {
+                        std::cout << "[GF_BOUNDS_EXCEEDED] tick=" << tickCounter_
+                                  << " player=" << i << " team=" << teamId
+                                  << " rawPos=(" << pos.coords[0] << "," << pos.coords[1] << ")"
+                                  << " envPos=(" << ps.pos[0] << "," << ps.pos[1] << ")"
+                                  << " role=" << ps.role
+                                  << std::endl;
+                    }
+                }
+
                 ps.team = static_cast<uint8_t>(teamId);
-                ps.role = static_cast<uint8_t>(pi.role);
-                ps.tiredFactor = pi.tired_factor;
+                ps.role = static_cast<uint8_t>(p->GetFormationEntry().role);
+                ps.tiredFactor = 1.0f - p->GetFatigueFactorInv();
                 ps.flags = 0;
-                if (pi.is_active) ps.flags |= 1;
-                if (pi.has_card)  ps.flags |= 2;
-                if (pi.designated_player) ps.flags |= 4;
+                if (p->IsActive()) ps.flags |= 1;
+                if (p->HasCards()) ps.flags |= 2;
+                if (p == t->MainSelectedPlayer()) ps.flags |= 4;
                 if (info.ball_owned_team == teamId && info.ball_owned_player == static_cast<int>(i)) {
                     ps.flags |= 8; // has_possession
                 }
-                // direction vector: prefer internal unscaled GetDirectionVec
-                Match* matchDir = gameEnv_->context->gameTask->GetMatch();
-                if (matchDir) {
-                    Team* tDir = matchDir->GetTeam(teamId);
-                    if (tDir && i < tDir->GetAllPlayers().size()) {
-                        Player* pDir = tDir->GetAllPlayers()[i];
-                        if (pDir) {
-                            Vector3 d = pDir->GetDirectionVec();
-                            ps.dir[0] = d.coords[0];
-                            ps.dir[1] = d.coords[1];
-                            ps.dir[2] = d.coords[2];
-                        }
-                    }
-                }
+
+                Vector3 d = p->GetDirectionVec();
+                ps.dir[0] = d.coords[0] * mirrorScale;
+                ps.dir[1] = d.coords[1] * mirrorScale;
+                ps.dir[2] = d.coords[2];
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
-                    // fallback: pi.player_direction is ALREADY mirrored by GetTeamState
-                    // (team 1 internal -X becomes +X). Un-mirror so team 1 faces correct way.
-                    ps.dir[0] = pi.player_direction.env_coord(0) * mirrorScale;
-                    ps.dir[1] = pi.player_direction.env_coord(1) * mirrorScale;
-                    ps.dir[2] = pi.player_direction.env_coord(2);
+                    Vector3 mov = p->GetMovement();
+                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE * mirrorScale;
+                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE * mirrorScale;
+                    ps.dir[2] = mov.coords[2] / Z_FIELD_SCALE;
                 }
-                // Note: raw GetDirectionVec() gives internal (unmirrored) direction.
-                // Team 1 internal dir is already correct (-X for attacking left), so
-                // NO extra mirrorScale needed for raw path.
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
 
                 // Compute velocity by differentiating position (env coords / tick)
                 if (previousState_.tick == 0) {
-                    // First frame: previousState_ is zero-initialised, zero velocity
                     ps.vel[0] = 0.0f;
                     ps.vel[1] = 0.0f;
                     ps.vel[2] = 0.0f;
@@ -436,8 +468,44 @@ void Server::tick() {
             }
         };
 
-        fillTeam(info.left_team, 0, 0);
-        fillTeam(info.right_team, 1, 11);
+        fillTeam(0, 0);
+        fillTeam(1, 11);
+
+        // Diagnostic: verify what we actually computed for GK positions
+        if (tickCounter_ <= 120 || tickCounter_ % 60 == 0) {
+            Match* diagMatch = gameEnv_->context->gameTask->GetMatch();
+            float rawP0x = 999.0f, rawP11x = 999.0f;
+            Team* t0 = nullptr;
+            Team* t1 = nullptr;
+            if (diagMatch) {
+                t0 = diagMatch->GetTeam(0);
+                t1 = diagMatch->GetTeam(1);
+                if (t0) {
+                    std::vector<Player*> p0s;
+                    t0->GetAllPlayers(p0s);
+                    if (!p0s.empty() && p0s[0]) rawP0x = p0s[0]->GetPosition().coords[0] / X_FIELD_SCALE;
+                }
+                if (t1) {
+                    std::vector<Player*> p1s;
+                    t1->GetAllPlayers(p1s);
+                    if (!p1s.empty() && p1s[0]) rawP11x = p1s[0]->GetPosition().coords[0] / X_FIELD_SCALE;
+                }
+            }
+            float m0 = 999.0f, m1 = 999.0f;
+            if (t0) m0 = t0->isMirrored() ? -1.0f : 1.0f;
+            if (t1) m1 = t1->isMirrored() ? -1.0f : 1.0f;
+            std::cout << "[GameServer::tick] tick=" << tickCounter_
+                      << " mode=" << static_cast<int>(info.game_mode)
+                      << " in_play=" << (info.is_in_play ? 1 : 0)
+                      << " rawP0x=" << rawP0x << " rawP11x=" << rawP11x
+                      << " m0=" << m0 << " m1=" << m1
+                      << " p0.pos=" << currentState_.players[0].pos[0] << "," << currentState_.players[0].pos[1]
+                      << " p11.pos=" << currentState_.players[11].pos[0] << "," << currentState_.players[11].pos[1]
+                      << " ball=" << currentState_.ball.pos[0] << "," << currentState_.ball.pos[1]
+                      << " left_team_size=" << info.left_team.size()
+                      << " right_team_size=" << info.right_team.size()
+                      << std::endl;
+        }
 
         // --- Detect card transitions (yellow = has_card flag turned on, red = is_active flag turned off) ---
         for (int idx = 0; idx < kMaxPlayers; ++idx) {

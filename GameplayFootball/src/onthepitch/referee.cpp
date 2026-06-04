@@ -155,8 +155,8 @@ void Referee::Process() {
           // Number of ms for kickoff.
           buffer.startTime = buffer.prepareTime + 500;
           buffer.restartPos = Vector3(0, 0, 0);
-          buffer.teamID = match->FirstTeam();
           buffer.setpiece_team = match->GetLastGoalTeam()->Opponent();
+          buffer.teamID = buffer.setpiece_team->GetID();
         } else if ((ballPos.coords[0] > 0 && lastSide > 0) ||
                    (ballPos.coords[0] < 0 && lastSide < 0)) {
           DO_VALIDATION;

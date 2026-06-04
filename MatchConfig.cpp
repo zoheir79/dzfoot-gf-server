@@ -26,7 +26,15 @@ std::vector<FormationEntry> buildFormation(const TeamConfig& tc) {
     std::vector<FormationEntry> out;
     out.reserve(tc.formation.size());
     for (const auto& e : tc.formation) {
-        out.emplace_back(e.x, e.y, parseRole(e.role), false, e.controllable);
+        // Do NOT use FormationEntry(x,y,...) constructor because it
+        // multiplies y by FORMATION_Y_SCALE=-2.36. Set raw coordinates directly.
+        FormationEntry fe;
+        fe.position = Vector3(e.x, e.y, 0);
+        fe.start_position = fe.position;
+        fe.role = parseRole(e.role);
+        fe.lazy = false;
+        fe.controllable = e.controllable;
+        out.push_back(fe);
     }
     return out;
 }
