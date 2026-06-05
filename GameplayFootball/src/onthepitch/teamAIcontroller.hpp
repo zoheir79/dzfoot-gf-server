@@ -20,19 +20,17 @@
 
 #include "../gamedefines.hpp"
 
-#include "../base/properties.hpp"
+#include "base/properties.hpp"
 
 class Match;
 class Team;
 
 struct TacticalOpponentInfo {
   Player *player;
-  float dangerFactor = 0.0f;
-  void ProcessState(EnvState* state) { DO_VALIDATION;
-    state->process(player);
-    state->process(dangerFactor);
-  }
+  float dangerFactor;
 };
+
+bool SortTacticalOpponentInfo(const TacticalOpponentInfo &a, const TacticalOpponentInfo &b);
 
 class TeamAIController {
 
@@ -48,10 +46,9 @@ class TeamAIController {
     void CalculateManMarking();
     void ApplyOffsideTrap(Vector3 &position) const;
     float GetOffsideTrapX() const { return offsideTrapX; }
-    void PrepareSetPiece(e_GameMode setPiece, Team* other_team,
-                         int kickoffTakerTeamId, int takerTeamID);
-    Player *GetPieceTaker() { DO_VALIDATION; return taker; }
-    e_GameMode GetSetPieceType() { DO_VALIDATION; return setPieceType; }
+    void PrepareSetPiece(e_SetPiece setPiece, int takerTeamID = -1);
+    Player *GetPieceTaker() { return taker; }
+    e_SetPiece GetSetPieceType() { return setPieceType; }
     void ApplyAttackingRun(Player *manualPlayer = 0);
     void ApplyTeamPressure();
     void ApplyKeeperRush();
@@ -59,54 +56,53 @@ class TeamAIController {
 
     void UpdateTactics();
 
-    unsigned long GetEndApplyAttackingRun_ms() { DO_VALIDATION; return endApplyAttackingRun_ms; }
-    Player *GetAttackingRunPlayer() { DO_VALIDATION; return attackingRunPlayer; }
+    unsigned long GetEndApplyAttackingRun_ms() { return endApplyAttackingRun_ms; }
+    Player *GetAttackingRunPlayer() { return attackingRunPlayer; }
 
-    unsigned long GetEndApplyTeamPressure_ms() { DO_VALIDATION; return endApplyTeamPressure_ms; }
-    Player *GetTeamPressurePlayer() { DO_VALIDATION; return teamPressurePlayer; }
+    unsigned long GetEndApplyTeamPressure_ms() { return endApplyTeamPressure_ms; }
+    Player *GetTeamPressurePlayer() { return teamPressurePlayer; }
 
-    Player *GetForwardSupportPlayer() { DO_VALIDATION; return forwardSupportPlayer; }
+    Player *GetForwardSupportPlayer() { return forwardSupportPlayer; }
 
-    unsigned long GetEndApplyKeeperRush_ms() { DO_VALIDATION; return endApplyKeeperRush_ms; }
+    unsigned long GetEndApplyKeeperRush_ms() { return endApplyKeeperRush_ms; }
 
-    const std::vector<TacticalOpponentInfo> &GetTacticalOpponentInfo() { DO_VALIDATION; return tacticalOpponentInfo; }
+    const std::vector<TacticalOpponentInfo> &GetTacticalOpponentInfo() { return tacticalOpponentInfo; }
 
     void Reset();
-    void ProcessState(EnvState* state);
 
   protected:
 
     Match *match;
     Team *team;
     Player *taker;
-    e_GameMode setPieceType;
+    e_SetPiece setPieceType;
 
     Properties baseTeamTactics;
     Properties teamTacticsModMultipliers;
     Properties liveTeamTactics;
 
-    float offensivenessBias = 0.0f;
+    float offensivenessBias;
 
-    bool teamHasPossession = false;
-    bool teamHasUniquePossession = false;
-    bool oppTeamHasPossession = false;
-    bool oppTeamHasUniquePossession = false;
-    bool teamHasBestPossession = false;
-    float teamPossessionAmount = 0.0f;
-    float fadingTeamPossessionAmount = 0.0f;
-    int timeNeededToGetToBall = 0;
-    int oppTimeNeededToGetToBall = 0;
+    bool teamHasPossession;
+    bool teamHasUniquePossession;
+    bool oppTeamHasPossession;
+    bool oppTeamHasUniquePossession;
+    bool teamHasBestPossession;
+    float teamPossessionAmount;
+    float fadingTeamPossessionAmount;
+    int timeNeededToGetToBall;
+    int oppTimeNeededToGetToBall;
 
-    float depth = 0.0f;
-    float width = 0.0f;
+    float depth;
+    float width;
 
-    float offsideTrapX = 0.0f;
+    float offsideTrapX;
 
-    unsigned long endApplyAttackingRun_ms = 0;
+    unsigned long endApplyAttackingRun_ms;
     Player *attackingRunPlayer;
-    unsigned long endApplyTeamPressure_ms = 0;
+    unsigned long endApplyTeamPressure_ms;
     Player *teamPressurePlayer;
-    unsigned long endApplyKeeperRush_ms = 0;
+    unsigned long endApplyKeeperRush_ms;
 
     Player *forwardSupportPlayer; // sort of like the attacking run player, but more for a forward offset for a player close to the action, to support the player in possession
 

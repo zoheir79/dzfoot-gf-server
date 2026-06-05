@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2014
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -23,7 +10,7 @@
 #include "vector3.hpp"
 #include "matrix3.hpp"
 
-#include "../../base/log.hpp"
+#include "base/log.hpp"
 
 // most of the formulas derived from ogre3d
 // lots of credit to the ogre3d crew!
@@ -31,80 +18,78 @@
 
 namespace blunted {
 
-Quaternion::Quaternion(real x, real y, real z, real w) {
-  DO_VALIDATION;
-  elements[0] = x;
-  elements[1] = y;
-  elements[2] = z;
-  elements[3] = w;
-}
-
-Quaternion::Quaternion(real values[4]) {
-  DO_VALIDATION;
-  elements[0] = values[0];
-  elements[1] = values[1];
-  elements[2] = values[2];
-  elements[3] = values[3];
-}
-
-void Quaternion::Set(real x, real y, real z, real w) {
-  DO_VALIDATION;
-  elements[0] = x;
-  elements[1] = y;
-  elements[2] = z;
-  elements[3] = w;
-}
-
-void Quaternion::Set(const Quaternion &quat) {
-  DO_VALIDATION;
-  elements[0] = quat.elements[0];
-  elements[1] = quat.elements[1];
-  elements[2] = quat.elements[2];
-  elements[3] = quat.elements[3];
-}
-
-void Quaternion::Set(const Matrix3 &mat) {
-  DO_VALIDATION;
-  // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/forum.htm
-
-  real n4;  // the norm of quaternion multiplied by 4
-  Matrix3 tmp(mat);
-
-  real tr =
-      tmp.elements[0] + tmp.elements[4] + tmp.elements[8];  // trace of matrix
-  if (tr > 0.0f) {
-    DO_VALIDATION;
-    Set(tmp.elements[7] - tmp.elements[5], tmp.elements[2] - tmp.elements[6],
-        tmp.elements[3] - tmp.elements[1], tr + 1.0f);
-    n4 = elements[3];
-  } else if ((tmp.elements[0] > tmp.elements[4]) &&
-             (tmp.elements[0] > tmp.elements[8])) {
-    DO_VALIDATION;
-    Set(1.0f + tmp.elements[0] - tmp.elements[4] - tmp.elements[8],
-        tmp.elements[1] + tmp.elements[3], tmp.elements[2] + tmp.elements[6],
-        tmp.elements[7] - tmp.elements[5]);
-    n4 = elements[0];
-  } else if (tmp.elements[4] > tmp.elements[8]) {
-    DO_VALIDATION;
-    Set(tmp.elements[1] + tmp.elements[3],
-        1.0f + tmp.elements[4] - tmp.elements[0] - tmp.elements[8],
-        tmp.elements[5] + tmp.elements[7], tmp.elements[2] - tmp.elements[6]);
-    n4 = elements[1];
-  } else {
-    Set(tmp.elements[2] + tmp.elements[6], tmp.elements[5] + tmp.elements[7],
-        1.0f + tmp.elements[8] - tmp.elements[0] - tmp.elements[4],
-        tmp.elements[3] - tmp.elements[1]);
-    n4 = elements[2];
+  Quaternion::Quaternion() {
+    elements[0] = 0;
+    elements[1] = 0;
+    elements[2] = 0;
+    elements[3] = 1;
   }
-  scale(0.5f / (float)std::sqrt(n4));
-}
+
+  Quaternion::Quaternion(real x, real y, real z, real w) {
+    elements[0] = x;
+    elements[1] = y;
+    elements[2] = z;
+    elements[3] = w;
+  }
+
+  Quaternion::Quaternion(real values[4]) {
+    elements[0] = values[0];
+    elements[1] = values[1];
+    elements[2] = values[2];
+    elements[3] = values[3];
+  }
+
+  Quaternion::~Quaternion() {
+  }
+
+  void Quaternion::Set(real x, real y, real z, real w) {
+    elements[0] = x;
+    elements[1] = y;
+    elements[2] = z;
+    elements[3] = w;
+  }
+
+  void Quaternion::Set(const Quaternion &quat) {
+    elements[0] = quat.elements[0];
+    elements[1] = quat.elements[1];
+    elements[2] = quat.elements[2];
+    elements[3] = quat.elements[3];
+  }
+
+  void Quaternion::Set(const Matrix3 &mat) {
+    // http://www.euclideanspace.com/maths/geometry/rotations/conversions/matrixToQuaternion/forum.htm
+
+    real n4; // the norm of quaternion multiplied by 4
+    Matrix3 tmp(mat);
+
+    real tr = tmp.elements[0] + tmp.elements[4] + tmp.elements[8]; // trace of matrix
+    if (tr > 0.0f) {
+      Set(tmp.elements[7] - tmp.elements[5], tmp.elements[2] - tmp.elements[6], tmp.elements[3] - tmp.elements[1], tr + 1.0f);
+      n4 = elements[3];
+    } else if ( (tmp.elements[0] > tmp.elements[4]) && (tmp.elements[0] > tmp.elements[8]) ) {
+      Set(1.0f + tmp.elements[0] - tmp.elements[4] - tmp.elements[8], tmp.elements[1] + tmp.elements[3],
+                 tmp.elements[2] + tmp.elements[6], tmp.elements[7] - tmp.elements[5]);
+      n4 = elements[0];
+    } else if (tmp.elements[4] > tmp.elements[8]) {
+      Set(tmp.elements[1] + tmp.elements[3], 1.0f + tmp.elements[4] - tmp.elements[0] - tmp.elements[8],
+          tmp.elements[5] + tmp.elements[7], tmp.elements[2] - tmp.elements[6]);
+      n4 = elements[1];
+    } else {
+      Set(tmp.elements[2] + tmp.elements[6], tmp.elements[5] + tmp.elements[7],
+          1.0f + tmp.elements[8] - tmp.elements[0] - tmp.elements[4], tmp.elements[3] - tmp.elements[1]);
+      n4 = elements[2];
+    }
+    scale(0.5f / (float)std::sqrt(n4));
+  }
+
 
   // ----- operator overloading
 
   bool Quaternion::operator != (const Quaternion &fac) const {
-    if (fac.elements[0] != elements[0] || fac.elements[1] != elements[1] ||
-        fac.elements[2] != elements[2] || fac.elements[3] != elements[3]) {
-      DO_VALIDATION;
+    if (fac.elements[0] != elements[0] ||
+        fac.elements[0] != elements[1] ||
+        fac.elements[2] != elements[2] ||
+        fac.elements[3] != elements[3]) {
       return true;
     } else {
       return false;
@@ -129,8 +114,7 @@ void Quaternion::Set(const Matrix3 &mat) {
 
   }
 
-  void Quaternion::operator=(const Vector3 &vec) {
-    DO_VALIDATION;
+  void Quaternion::operator = (const Vector3 &vec) {
 
     Vector3 z = vec;
     z.Normalize();
@@ -175,7 +159,6 @@ void Quaternion::Set(const Matrix3 &mat) {
   Quaternion Quaternion::GetInverse() const {
     real fnorm = GetMagnitude();
     if (fnorm < 0.000001f) {
-      DO_VALIDATION;
       //Log(e_Warning, "Quaternion", "GetInverse", "Unable to normalize quaternion");
       return QUATERNION_IDENTITY;
     } else {
@@ -211,21 +194,18 @@ void Quaternion::Set(const Matrix3 &mat) {
     rotation.elements[8]  = 1 - 2 * ( xx + yy );
   }
 
-  void Quaternion::GetAngles(real &X, real &Y, real &Z) const {
+  void Quaternion::GetAngles(radian &X, radian &Y, radian &Z) const {
     int x = 0;
     int y = 2;
     int z = 1;
 
     float singularityTest = elements[x] * elements[y] + elements[z] * elements[3];
-    if (singularityTest > 0.49999 || singularityTest < -0.49999) {
-      DO_VALIDATION;  // north and south pole
+    if (singularityTest > 0.49999 || singularityTest < -0.49999) { // north and south pole
       if (singularityTest > 0) {
-        DO_VALIDATION;
         Z = 2 * std::atan2(elements[x], elements[z]);
         Y = pi * 0.5;
       }
       if (singularityTest < 0) {
-        DO_VALIDATION;
         Z = -2 * std::atan2(elements[x], elements[z]);
         Y = -pi * 0.5;
       }
@@ -245,8 +225,7 @@ void Quaternion::Set(const Matrix3 &mat) {
         1 - 2 * sqx - 2 * sqz);
   }
 
-  void Quaternion::SetAngles(real X, real Y, real Z) {
-    DO_VALIDATION;
+  void Quaternion::SetAngles(radian X, radian Y, radian Z) {
     // http://www.euclideanspace.com/maths/geometry/rotations/conversions/eulerToQuaternion/index.htm
     // assuming the angles are in radians.
 
@@ -262,6 +241,7 @@ void Quaternion::Set(const Matrix3 &mat) {
     elements[0] = c1c2 * s3 + s1s2 * c3;
     elements[1] = s1 * c2 * c3 + c1 * s2 * s3;
     elements[2] = c1 * s2 * c3 - s1 * c2 * s3;
+
   }
 
   void Quaternion::GetAngleAxis(radian& rfangle, Vector3& rkaxis) const {
@@ -274,7 +254,6 @@ void Quaternion::Set(const Matrix3 &mat) {
 
     double div = std::sqrt(1.0f - elements[3] * elements[3]);
     if (div < 0.000001f) {
-      DO_VALIDATION;
       rkaxis.coords[0] = elements[0];
       rkaxis.coords[1] = elements[1];
       rkaxis.coords[2] = elements[2];
@@ -283,10 +262,26 @@ void Quaternion::Set(const Matrix3 &mat) {
       rkaxis.coords[1] = elements[1] / div;
       rkaxis.coords[2] = elements[2] / div;
     }
+
+    /*
+    // non-tested version from http://willperone.net/Code/quaternion.php
+    angle = acosf(s);
+
+    // pre-compute to save time
+    float sinf_theta_inv = 1.0/sinf(angle);
+
+    // now the vector
+    axis.x = v.x*sinf_theta_inv;
+    axis.y = v.y*sinf_theta_inv;
+    axis.z = v.z*sinf_theta_inv;
+
+    // multiply by 2
+    angle*=2;
+    */
+
   }
 
-  void Quaternion::SetAngleAxis(const radian &rfangle, const Vector3 &rkaxis) {
-    DO_VALIDATION;
+  void Quaternion::SetAngleAxis(const radian& rfangle, const Vector3& rkaxis) {
     // assert: rkaxis[] is unit length
     //
     // the quaternion representing the rotation is
@@ -301,7 +296,6 @@ void Quaternion::Set(const Matrix3 &mat) {
   }
 
   void Quaternion::conjugate() {
-    DO_VALIDATION;
     elements[0] = -elements[0];
     elements[1] = -elements[1];
     elements[2] = -elements[2];
@@ -312,9 +306,7 @@ void Quaternion::Set(const Matrix3 &mat) {
   }
 
   void Quaternion::scale(const real fac) {
-    DO_VALIDATION;
     for (int i = 0; i < 4; i++) {
-      DO_VALIDATION;
       elements[i] *= fac;
     }
   }
@@ -329,20 +321,18 @@ void Quaternion::Set(const Matrix3 &mat) {
   }
 
   void Quaternion::Normalize() {
-    DO_VALIDATION;
     // http://stackoverflow.com/questions/11667783/quaternion-and-normalization
     double qmagsq = elements[0] * elements[0] + elements[1] * elements[1] + elements[2] * elements[2] + elements[3] * elements[3]; // squared magnitude
     if (qmagsq < 0.000001f) {
-      DO_VALIDATION;
       Set(QUATERNION_IDENTITY[0], QUATERNION_IDENTITY[1], QUATERNION_IDENTITY[2], QUATERNION_IDENTITY[3]);
     } else {
-      if (abs(1.0 - qmagsq) < 2.107342e-08) {
-        DO_VALIDATION;
+      if (std::fabs(1.0 - qmagsq) < 2.107342e-08) {
         scale(2.0 / (1.0 + qmagsq));
       } else {
         scale(1.0 / sqrt(qmagsq));
       }
     }
+
   }
 
   Quaternion Quaternion::GetNormalized() const {
@@ -371,14 +361,12 @@ void Quaternion::Set(const Matrix3 &mat) {
     double cosHalfTheta = elements[3] * qb.elements[3] + elements[0] * qb.elements[0] + elements[1] * qb.elements[1] + elements[2] * qb.elements[2];
 
     if (cosHalfTheta < 0) {
-      DO_VALIDATION;
       qb = -qb;
       cosHalfTheta = -cosHalfTheta;
     }
 
     // if *this=to or *this=-to then theta = 0 and we can return *this
     if (fabs(cosHalfTheta) >= 1.0) {
-      DO_VALIDATION;
       qm.elements[3] = elements[3];
       qm.elements[0] = elements[0];
       qm.elements[1] = elements[1];
@@ -392,8 +380,7 @@ void Quaternion::Set(const Matrix3 &mat) {
 
     // if theta = 180 degrees then result is not fully defined
     // we could rotate around any axis normal to *this or to
-    if (fabs(sinHalfTheta) < 0.000001f) {
-      DO_VALIDATION;  // fabs is floating point absolute
+    if (fabs(sinHalfTheta) < 0.000001f) { // fabs is floating point absolute
       qm.elements[3] = (elements[3] * 0.5 + qb.elements[3] * 0.5);
       qm.elements[0] = (elements[0] * 0.5 + qb.elements[0] * 0.5);
       qm.elements[1] = (elements[1] * 0.5 + qb.elements[1] * 0.5);
@@ -426,6 +413,7 @@ void Quaternion::Set(const Matrix3 &mat) {
     radian angle;
     GetAngleAxis(angle, axis);
 
+    //printf("angle: %f\n", angle);
     if (angle > pi) angle -= 2.0f * pi; // range -pi .. pi
 
     angle = std::fmod(angle * factor, 2.0f * pi);  // remove multiples of 2pi
@@ -436,20 +424,16 @@ void Quaternion::Set(const Matrix3 &mat) {
   }
 
   float Quaternion::MakeSameNeighborhood(const Quaternion &src) {
-    DO_VALIDATION;
     float dot = GetDotProduct(src);
     if (dot < 0) {
-      DO_VALIDATION;
       dot = -dot;
       *this = -*this;
     }
     return dot;
   }
 
-  std::ostream& operator<<(std::ostream& os, const Quaternion& v)
-  {
-    os << v.elements[0] << " " << v.elements[1] << " " << v.elements[2] << " " << v.elements[3];
-    return os;
+  void Quaternion::Print() const {
+    printf("%f, %f, %f, %f\n", elements[0], elements[1], elements[2], elements[3]);
   }
 
 }

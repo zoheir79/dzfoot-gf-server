@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -25,26 +12,23 @@
 #include "../../../main.hpp"
 
 RefereeController::RefereeController(Match *match) : IController(match) {
-  DO_VALIDATION;
 }
 
-RefereeController::~RefereeController() { DO_VALIDATION; }
-
-PlayerOfficial *RefereeController::CastPlayer() {
-  DO_VALIDATION;
-  return static_cast<PlayerOfficial *>(player);
+RefereeController::~RefereeController() {
+  if (Verbose()) printf("exiting refereecontroller.. ");
+  if (Verbose()) printf("done\n");
 }
+
+PlayerOfficial *RefereeController::CastPlayer() { return static_cast<PlayerOfficial*>(player); }
 
 void RefereeController::GetForceField(std::vector<ForceSpot> &forceField) {
-  DO_VALIDATION;
-  {
-    ForceSpot forceSpot;
-    forceSpot.origin =
-        match->GetBall()->GetAveragePosition(2000).Get2D() * 0.6f;
-    forceSpot.magnetType = e_MagnetType_Attract;
-    forceSpot.decayType = e_DecayType_Constant;
-    forceSpot.power = 0.5f;
-    forceField.push_back(forceSpot);
+ {
+   ForceSpot forceSpot;
+   forceSpot.origin = match->GetBall()->GetAveragePosition(2000).Get2D() * 0.6f;
+   forceSpot.magnetType = e_MagnetType_Attract;
+   forceSpot.decayType = e_DecayType_Constant;
+   forceSpot.power = 0.5f;
+   forceField.push_back(forceSpot);
   }
 
  {
@@ -58,13 +42,11 @@ void RefereeController::GetForceField(std::vector<ForceSpot> &forceField) {
   }
 
   std::vector<Player*> players;
-  match->GetActiveTeamPlayers(match->FirstTeam(),
-                              players);
-  match->GetActiveTeamPlayers(match->SecondTeam(), players);
+  match->GetActiveTeamPlayers(0, players); // todo: only closest players will do
+  match->GetActiveTeamPlayers(1, players);
   for (unsigned int i = 0; i < players.size(); i++) {
-    DO_VALIDATION;
     ForceSpot forceSpot;
-    forceSpot.origin = players[i]->GetPosition() + players[i]->GetMovement() * 0.4f;
+    forceSpot.origin = players.at(i)->GetPosition() + players.at(i)->GetMovement() * 0.4f;
     forceSpot.magnetType = e_MagnetType_Repel;
     forceSpot.decayType = e_DecayType_Variable;
     forceSpot.power = 0.5f;
@@ -74,23 +56,17 @@ void RefereeController::GetForceField(std::vector<ForceSpot> &forceField) {
 }
 
 void RefereeController::RequestCommand(PlayerCommandQueue &commandQueue) {
-  DO_VALIDATION;
 
   switch (CastPlayer()->GetOfficialType()) {
-    DO_VALIDATION;
 
     case e_OfficialType_Referee:
       if (match->GetReferee()->GetBuffer().active == true &&
-          (match->GetReferee()->GetCurrentFoulType() == 2 ||
-           match->GetReferee()->GetCurrentFoulType() == 3) &&
-          match->GetReferee()->GetBuffer().prepareTime >
-              match->GetActualTime_ms() + 5000) {
-        DO_VALIDATION;  // FOUL, walk towards offender
+          (match->GetReferee()->GetCurrentFoulType() == 2 || match->GetReferee()->GetCurrentFoulType() == 3) &&
+          match->GetReferee()->GetBuffer().prepareTime > match->GetActualTime_ms() + 5000) { // FOUL, walk towards offender
 
         Vector3 desiredPosition = match->GetReferee()->GetCurrentFoulPlayer()->GetPosition() + (CastPlayer()->GetPosition() - match->GetReferee()->GetCurrentFoulPlayer()->GetPosition()).GetNormalized(0) * 2.0;
 
         if ((CastPlayer()->GetPosition() - desiredPosition).GetLength() > 2.0) {
-          DO_VALIDATION;
           PlayerCommand command;
           command.desiredFunctionType = e_FunctionType_Movement;
           command.useDesiredMovement = true;
@@ -122,7 +98,7 @@ void RefereeController::RequestCommand(PlayerCommandQueue &commandQueue) {
           }
         }
 
-      } else {  // NORMAL
+      } else { // NORMAL
 
         PlayerCommand command;
         command.desiredFunctionType = e_FunctionType_Movement;
@@ -148,10 +124,9 @@ void RefereeController::RequestCommand(PlayerCommandQueue &commandQueue) {
         command.useDesiredMovement = true;
         command.useDesiredLookAt = true;
 
-        float offside = 0.0f;
+        float offside;
         Vector3 desiredPosition;
         if (player->GetPosition().coords[1] < 0) {
-          DO_VALIDATION;
           offside = AI_GetOffsideLine(match, match->GetMentalImage(0), 1);
           desiredPosition = Vector3(offside, -(pitchHalfH + 0.8f), 0);
         } else {
@@ -166,24 +141,24 @@ void RefereeController::RequestCommand(PlayerCommandQueue &commandQueue) {
         commandQueue.push_back(command);
       }
       break;
+
   }
 }
 
-void RefereeController::Process() { DO_VALIDATION; }
+void RefereeController::Process() {
+}
 
 Vector3 RefereeController::GetDirection() {
-  DO_VALIDATION;
   return player->GetDirectionVec();
 }
 
 float RefereeController::GetFloatVelocity() {
-  DO_VALIDATION;
   return player->GetFloatVelocity();
 }
 
 int RefereeController::GetReactionTime_ms() {
-  DO_VALIDATION;
   return 60;
 }
 
-void RefereeController::Reset() { DO_VALIDATION; }
+void RefereeController::Reset() {
+}

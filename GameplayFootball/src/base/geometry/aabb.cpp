@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2014
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -22,36 +9,31 @@
 
 namespace blunted {
 
-AABB::AABB() { DO_VALIDATION; }
+  AABB::AABB() {
+  }
 
-AABB::AABB(const AABB &src) {
-  DO_VALIDATION;
-  this->minxyz = src.minxyz;
-  this->maxxyz = src.maxxyz;
-  radius_needupdate = true;
-  center_needupdate = true;
-}
+  AABB::AABB(const AABB &src) {
+    this->minxyz = src.minxyz;
+    this->maxxyz = src.maxxyz;
+    radius_needupdate = true;
+    center_needupdate = true;
+  }
 
-AABB::~AABB() { DO_VALIDATION; }
+  AABB::~AABB() {
+  }
 
-AABB AABB::operator+=(const AABB &add) {
-  DO_VALIDATION;
-  if (minxyz.coords[0] > add.minxyz.coords[0])
-    minxyz.coords[0] = add.minxyz.coords[0];
-  if (minxyz.coords[1] > add.minxyz.coords[1])
-    minxyz.coords[1] = add.minxyz.coords[1];
-  if (minxyz.coords[2] > add.minxyz.coords[2])
-    minxyz.coords[2] = add.minxyz.coords[2];
-  if (maxxyz.coords[0] < add.maxxyz.coords[0])
-    maxxyz.coords[0] = add.maxxyz.coords[0];
-  if (maxxyz.coords[1] < add.maxxyz.coords[1])
-    maxxyz.coords[1] = add.maxxyz.coords[1];
-  if (maxxyz.coords[2] < add.maxxyz.coords[2])
-    maxxyz.coords[2] = add.maxxyz.coords[2];
-  radius_needupdate = true;
-  center_needupdate = true;
-  return *this;
-}
+
+  AABB AABB::operator += (const AABB &add) {
+    if (minxyz.coords[0] > add.minxyz.coords[0]) minxyz.coords[0] = add.minxyz.coords[0];
+    if (minxyz.coords[1] > add.minxyz.coords[1]) minxyz.coords[1] = add.minxyz.coords[1];
+    if (minxyz.coords[2] > add.minxyz.coords[2]) minxyz.coords[2] = add.minxyz.coords[2];
+    if (maxxyz.coords[0] < add.maxxyz.coords[0]) maxxyz.coords[0] = add.maxxyz.coords[0];
+    if (maxxyz.coords[1] < add.maxxyz.coords[1]) maxxyz.coords[1] = add.maxxyz.coords[1];
+    if (maxxyz.coords[2] < add.maxxyz.coords[2]) maxxyz.coords[2] = add.maxxyz.coords[2];
+    radius_needupdate = true;
+    center_needupdate = true;
+    return *this;
+  }
 
   AABB AABB::operator + (const Vector3 &vec) const {
     AABB aabb(*this);
@@ -84,20 +66,18 @@ AABB AABB::operator+=(const AABB &add) {
     vecs.push_back(vec);
 
     for (int i = 0; i < (signed int)vecs.size(); i++) {
-      DO_VALIDATION;
-      vecs[i] = rot * vecs[i];
+      vecs.at(i) = rot * vecs.at(i);
     }
 
     aabb.Reset();
 
     for (int i = 0; i < (signed int)vecs.size(); i++) {
-      DO_VALIDATION;
-      if (vecs[i].coords[0] < aabb.minxyz.coords[0]) aabb.minxyz.coords[0] = vecs[i].coords[0];
-      if (vecs[i].coords[0] > aabb.maxxyz.coords[0]) aabb.maxxyz.coords[0] = vecs[i].coords[0];
-      if (vecs[i].coords[1] < aabb.minxyz.coords[1]) aabb.minxyz.coords[1] = vecs[i].coords[1];
-      if (vecs[i].coords[1] > aabb.maxxyz.coords[1]) aabb.maxxyz.coords[1] = vecs[i].coords[1];
-      if (vecs[i].coords[2] < aabb.minxyz.coords[2]) aabb.minxyz.coords[2] = vecs[i].coords[2];
-      if (vecs[i].coords[2] > aabb.maxxyz.coords[2]) aabb.maxxyz.coords[2] = vecs[i].coords[2];
+      if (vecs.at(i).coords[0] < aabb.minxyz.coords[0]) aabb.minxyz.coords[0] = vecs.at(i).coords[0];
+      if (vecs.at(i).coords[0] > aabb.maxxyz.coords[0]) aabb.maxxyz.coords[0] = vecs.at(i).coords[0];
+      if (vecs.at(i).coords[1] < aabb.minxyz.coords[1]) aabb.minxyz.coords[1] = vecs.at(i).coords[1];
+      if (vecs.at(i).coords[1] > aabb.maxxyz.coords[1]) aabb.maxxyz.coords[1] = vecs.at(i).coords[1];
+      if (vecs.at(i).coords[2] < aabb.minxyz.coords[2]) aabb.minxyz.coords[2] = vecs.at(i).coords[2];
+      if (vecs.at(i).coords[2] > aabb.maxxyz.coords[2]) aabb.maxxyz.coords[2] = vecs.at(i).coords[2];
     }
 
     radius_needupdate = true;
@@ -106,35 +86,30 @@ AABB AABB::operator+=(const AABB &add) {
   }
 
   void AABB::Reset() {
-    const float min_v = std::numeric_limits<real>::min() / 100;
-    const float max_v = std::numeric_limits<real>::max() / 100;
-    minxyz.Set(max_v, max_v, max_v);
-    maxxyz.Set(min_v, min_v, min_v);
+    minxyz.Set( std::numeric_limits<real>::max(),  std::numeric_limits<real>::max(),  std::numeric_limits<real>::max());
+    maxxyz.Set(-std::numeric_limits<real>::max(), -std::numeric_limits<real>::max(), -std::numeric_limits<real>::max());
     radius_needupdate = true;
     center_needupdate = true;
   }
 
   void AABB::SetMinXYZ(const Vector3 &min) {
-    DO_VALIDATION;
     minxyz = min;
     MakeDirty();
   }
 
   void AABB::SetMaxXYZ(const Vector3 &max) {
-    DO_VALIDATION;
     maxxyz = max;
     MakeDirty();
   }
 
   real AABB::GetRadius() const {
     if (radius_needupdate) {
-      DO_VALIDATION;
       real x, y, z;
       x = maxxyz.coords[0] - minxyz.coords[0];
       y = maxxyz.coords[1] - minxyz.coords[1];
       z = maxxyz.coords[2] - minxyz.coords[2];
-      real length = sqrt(std::pow(x, 2) + std::pow(y, 2));
-      radius = sqrt(std::pow(length, 2) + std::pow(z, 2)) / 2.0;
+      real length = sqrt(pow(x, 2) + pow(y, 2));
+      radius = sqrt(pow(length, 2) + pow(z, 2)) / 2.0;
       radius_needupdate = false;
     }
     return radius;
@@ -142,7 +117,6 @@ AABB AABB::operator+=(const AABB &add) {
 
   void AABB::GetCenter(Vector3 &center) const {
     if (center_needupdate) {
-      DO_VALIDATION;
       real x = (minxyz.coords[0] + maxxyz.coords[0]) / 2.0;
       real y = (minxyz.coords[1] + maxxyz.coords[1]) / 2.0;
       real z = (minxyz.coords[2] + maxxyz.coords[2]) / 2.0;
@@ -156,13 +130,10 @@ AABB AABB::operator+=(const AABB &add) {
     real s, d = 0;
 
     for (int i = 0; i < 3; i++) {
-      DO_VALIDATION;
       if (center.coords[i] < minxyz.coords[i]) {
-        DO_VALIDATION;
         s = center.coords[i] - minxyz.coords[i];
         d += s * s;
       } else if (center.coords[i] > maxxyz.coords[i]) {
-        DO_VALIDATION;
         s = center.coords[i] - maxxyz.coords[i];
         d += s * s;
       }
@@ -188,19 +159,16 @@ AABB AABB::operator+=(const AABB &add) {
     real distance;
     int planes_size = planes.size();
     for (int p = 0; p < planes_size; p++) {
-      DO_VALIDATION;
       // check if there is any point (that defines this aabb) on the inside of this plane
       aabb_intersects_planecollection = false;
 
       determinant = planes.at(p).GetDeterminant();
       for (int ap = 0; ap < 8; ap++) {
-        DO_VALIDATION;
         distance = determinant + planes.at(p).GetVertex(1).coords[0] * aabb_points[ap].coords[0] +
                                  planes.at(p).GetVertex(1).coords[1] * aabb_points[ap].coords[1] +
                                  planes.at(p).GetVertex(1).coords[2] * aabb_points[ap].coords[2];
 
         if (distance > 0) {
-          DO_VALIDATION;
           aabb_intersects_planecollection = true;
           break;
         }
@@ -218,10 +186,32 @@ AABB AABB::operator+=(const AABB &add) {
         (src.maxxyz.coords[0] > minxyz.coords[0] &&
          src.maxxyz.coords[1] > minxyz.coords[1] &&
          src.maxxyz.coords[2] > minxyz.coords[2])) {
-      DO_VALIDATION;
       return true;
     } else {
       return false;
     }
   }
+
+  bool AABB::Intersects(const Line &src) const {
+    // http://www.gamedev.net/community/forums/topic.asp?topic_id=338987
+
+    Vector3 p1 = src.GetVertex(0);
+    Vector3 p2 = src.GetVertex(1);
+
+    Vector3 d = (p2 - p1) * 0.5f;
+    Vector3 e = (maxxyz - minxyz) * 0.5f;
+    Vector3 c = p1 + d - (minxyz + maxxyz) * 0.5f;
+    Vector3 ad = d.GetAbsolute(); // returns same vector with all components positive
+
+    if (fabsf(c.coords[0]) > e.coords[0] + ad.coords[0]) return false;
+    if (fabsf(c.coords[1]) > e.coords[1] + ad.coords[1]) return false;
+    if (fabsf(c.coords[2]) > e.coords[2] + ad.coords[2]) return false;
+
+    if (fabsf(d.coords[1] * c.coords[2] - d.coords[2] * c.coords[1]) > e.coords[1] * ad.coords[2] + e.coords[2] * ad.coords[1] + std::numeric_limits<float>::denorm_min()) return false;
+    if (fabsf(d.coords[2] * c.coords[0] - d.coords[0] * c.coords[2]) > e.coords[2] * ad.coords[0] + e.coords[0] * ad.coords[2] + std::numeric_limits<float>::denorm_min()) return false;
+    if (fabsf(d.coords[0] * c.coords[1] - d.coords[1] * c.coords[0]) > e.coords[0] * ad.coords[1] + e.coords[1] * ad.coords[0] + std::numeric_limits<float>::denorm_min()) return false;
+
+    return true;
+  }
+
 }

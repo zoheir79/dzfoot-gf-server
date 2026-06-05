@@ -17,11 +17,12 @@
 
 #ifndef _HPP_GRAPHICS3D_OPENGL
 #define _HPP_GRAPHICS3D_OPENGL
-#ifdef __linux__
-#include <EGL/egl.h>
-#endif
 
 #include "interface_renderer3d.hpp"
+
+#ifdef WIN32
+#include <SDL2/SDL_syswm.h>
+#endif
 
 namespace blunted {
 
@@ -29,9 +30,6 @@ namespace blunted {
 
     public:
       OpenGLRenderer3D();
-      virtual void SetContext();
-      virtual void DisableContext();
-      virtual const screenshoot& GetScreen();
       virtual ~OpenGLRenderer3D();
 
       virtual void SwapBuffers();
@@ -70,10 +68,12 @@ namespace blunted {
       virtual Matrix4 CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap = -1, float farCap = -1);
 
       // vertex buffers
-      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, const std::vector<unsigned int>& indices, e_VertexBufferUsage usage);
+      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage);
       virtual void UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize);
       virtual void DeleteVertexBuffer(VertexBufferID vertexBufferID);
       virtual void RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode = e_RenderMode_Full);
+      virtual void RenderAABB(std::list<VertexBufferQueueEntry> &vertexBufferQueue);
+      virtual void RenderAABB(std::list<LightQueueEntry> &lightQueue);
 
       // lights
       virtual void SetLight(const Vector3 &position, const Vector3 &color, float radius);
@@ -97,6 +97,12 @@ namespace blunted {
       virtual bool CheckFrameBufferStatus();
       virtual void SetFramebufferGammaCorrection(bool onOff);
 
+      // render buffers
+      virtual int CreateRenderBuffer();
+      virtual void DeleteRenderBuffer(int rbID);
+      virtual void BindRenderBuffer(int rbID);
+      virtual void SetRenderBufferStorage(e_InternalPixelFormat internalPixelFormat, int width, int height);
+
       // render targets
       virtual void SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments);
 
@@ -106,6 +112,7 @@ namespace blunted {
       virtual void PopAttribute();
       virtual void SetViewport(int x, int y, int width, int height);
       virtual void GetContextSize(int &width, int &height, int &bpp);
+      virtual void SetPolygonOffset(float scale, float bias);
 
       // shaders
       virtual void LoadShader(const std::string &name, const std::string &filename);
@@ -118,26 +125,27 @@ namespace blunted {
       virtual void SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values);
       virtual void SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat);
 
+      virtual void HDRCaptureOverallBrightness();
+      virtual float HDRGetOverallBrightness();
+
+      void operator()();
+
     protected:
-      SDL_GLContext context = 0;
-      SDL_Window* window = nullptr;
-#ifdef __linux__
-      EGLDisplay egl_display = nullptr;
-      EGLSurface egl_surface;
-      EGLContext egl_context;
-#endif
+      SDL_GLContext context;
+      SDL_Window* window;
       int context_width, context_height, context_bpp;
+      bool contextIsActive;
 
-      float cameraNear = 0.0f;
-      float cameraFar = 0.0f;
+      float cameraNear;
+      float cameraFar;
 
-      int noiseTexID = 0;
+      int noiseTexID;
 
-      float FOV = 0.0f;
+      float FOV;
 
-      float overallBrightness = 0.0f;
+      float overallBrightness;
 
-      float largest_supported_anisotropy = 0.0f;
+      float largest_supported_anisotropy;
       void SetMaxAnisotropy();
 
       std::map<std::string, int> uniformCache;
@@ -145,20 +153,22 @@ namespace blunted {
       std::map<int, int> VBOPingPongMap;
       std::map<int, int> VAOPingPongMap;
       std::map<int, int> VAOReadIndex;
+      //std::map<int, GLsync> VAOfence;
 
-      signed int _cache_activeTextureUnit = 0;
-      screenshoot last_screen_;
+      signed int _cache_activeTextureUnit;
+
       // members and functions for rendering overlay with shaders instead of deprecated methods
       VertexBufferID overlayBuffer;  // buffer for drawing textures such as player's names and game score
       VertexBufferID quadBuffer;     // buffer for drawing simple quads
       VertexBufferID CreateSimpleVertexBuffer(float *vertices, unsigned int size);
       void DeleteSimpleVertexBuffer(VertexBufferID vertexBufferID);
       void InitializeOverlayAndQuadBuffers();
-      void CreateContextSdl();
-#ifdef __linux__
-      void CreateContextEgl();
-#endif
   };
+
+#ifdef WIN32
+  static SDL_SysWMinfo wmInfo;
+#endif
+
 }
 
 #endif

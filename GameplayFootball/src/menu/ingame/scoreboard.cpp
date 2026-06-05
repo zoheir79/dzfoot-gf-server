@@ -1,33 +1,18 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
 
 #include "scoreboard.hpp"
 
-#include "../../utils/gui2/windowmanager.hpp"
+#include "utils/gui2/windowmanager.hpp"
 
-#include "wrap_SDL.h"
+#include <SDL2/SDL.h>
 
 #include "../../onthepitch/match.hpp"
 
 using namespace blunted;
 
-Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
-    : Gui2View(windowManager, "scoreboard", 2, 2, 96, 4) {
-  DO_VALIDATION;
+Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match) : Gui2View(windowManager, "scoreboard", 2, 2, 96, 4), match(match) {
   x_percent = 2;
   y_percent = 2;
   width_percent = 96;
@@ -36,6 +21,8 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
   Vector3 textColor = 255;
   Vector3 textOutlineColor = 0;
 
+  goalCount[0] = 0;
+  goalCount[1] = 0;
   int x, y, w, h;
   windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
 
@@ -51,6 +38,7 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
   xOffset[7] = 39; // t2 score
   xOffset[8] = 43; // end
   float relToAbsMultiplier = w / (width_percent * 1.0f);
+  content_yOffset = 0.2f;
   float content_xOffset = 0.2f;
 
   float bgAlpha = 100.0f;
@@ -62,7 +50,7 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
 
   leagueLogo = new Gui2Image(windowManager, "game_scoreboard_leaguelogo", xOffset[0], 0, height_percent / windowManager->GetAspectRatio(), height_percent);
   this->AddView(leagueLogo);
-  leagueLogo->LoadImage("media/menu/league.png");
+  leagueLogo->LoadImage("media/menu/league.png"); // todo: actual league picca
   leagueLogo->Show();
 
   timeCaption = new Gui2Caption(windowManager, "game_scoreboard_timecaption", xOffset[1] + content_xOffset, 0, 5, height_percent * 0.9f, "0:00");
@@ -81,6 +69,11 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
   goalCountCaption[0]->SetOutlineColor(textOutlineColor);
   goalCountCaption[1]->SetColor(textColor);
   goalCountCaption[1]->SetOutlineColor(textOutlineColor);
+
+  tvLogo = new Gui2Image(windowManager, "game_scoreboard_tvlogo", width_percent - (height_percent * 2.0f) / windowManager->GetAspectRatio(), 0, (height_percent * 2.0f) / windowManager->GetAspectRatio(), height_percent);
+  this->AddView(tvLogo);
+  tvLogo->LoadImage("media/menu/tvlogo.png");
+  tvLogo->Show();
 
   this->AddView(timeCaption);
   timeCaption->Show();
@@ -109,23 +102,45 @@ Gui2ScoreBoard::Gui2ScoreBoard(Gui2WindowManager *windowManager, Match *match)
   this->Show();
 }
 
-Gui2ScoreBoard::~Gui2ScoreBoard() { DO_VALIDATION; }
+Gui2ScoreBoard::~Gui2ScoreBoard() {
+  /* will be cleaned up while deleting gui2 tree automatically
+  bg->Exit();
+  delete bg;
+  leagueLogo->Exit();
+  delete leagueLogo;
+  timeCaption->Exit();
+  delete timeCaption;
+  teamNameCaption[0]->Exit();
+  delete teamNameCaption[0];
+  teamNameCaption[1]->Exit();
+  delete teamNameCaption[1];
+  goalCountCaption[0]->Exit();
+  delete goalCountCaption[0];
+  goalCountCaption[1]->Exit();
+  delete goalCountCaption[1];
+  teamLogo[0]->Exit();
+  delete teamLogo[0];
+  teamLogo[1]->Exit();
+  delete teamLogo[1];
+  tvLogo->Exit();
+  delete tvLogo;
+  */
+}
 
-void Gui2ScoreBoard::GetImages(
-    std::vector<boost::intrusive_ptr<Image2D> > &target) {
-  DO_VALIDATION;
+void Gui2ScoreBoard::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
   Gui2View::GetImages(target);
 }
 
-void Gui2ScoreBoard::Redraw() { DO_VALIDATION; }
+void Gui2ScoreBoard::Redraw() {
+}
 
 void Gui2ScoreBoard::SetTimeStr(const std::string &timeStr) {
-  DO_VALIDATION;
+  this->timeStr = timeStr;
   timeCaption->SetCaption(timeStr);
 }
 
 void Gui2ScoreBoard::SetGoalCount(int teamID, int goalCount) {
-  DO_VALIDATION;
+  this->goalCount[teamID] = goalCount;
   std::string goalStr = "";
   if (goalCount < 10) goalStr.append(" ");
   goalStr.append(int_to_str(goalCount));

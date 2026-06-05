@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2014
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -18,16 +5,17 @@
 #ifndef _HPP_RENDERER3D
 #define _HPP_RENDERER3D
 
-#include "../../../types/resource.hpp"
+#include "types/thread.hpp"
+#include "types/resource.hpp"
 
-#include "../../../base/sdl_surface.hpp"
-#include "../../../base/math/vector3.hpp"
+#include "base/sdl_surface.hpp"
+#include "base/math/vector3.hpp"
 
 #include "../resources/vertexbuffer.hpp"
 
-#include "../../../base/geometry/triangle.hpp"
+#include "base/geometry/triangle.hpp"
 
-#include "../../../types/material.hpp"
+#include "types/material.hpp"
 
 namespace blunted {
 
@@ -46,24 +34,24 @@ namespace blunted {
     boost::intrusive_ptr < Resource<Texture> > normalTexture;
     boost::intrusive_ptr < Resource<Texture> > specularTexture;
     boost::intrusive_ptr < Resource<Texture> > illuminationTexture;
-    float shininess = 0.0f;
-    float specular_amount = 0.0f;
+    float shininess;
+    float specular_amount;
     Vector3 self_illumination;
   };
 
   struct VertexBufferIndex {
-    int startIndex = 0;
-    int size = 0;
+    int startIndex;
+    int size;
     Renderer3DMaterial material;
   };
 
   struct VertexBufferQueueEntry {
-    std::list<VertexBufferIndex>* vertexBufferIndices;
+    std::deque<VertexBufferIndex> vertexBufferIndices;
     boost::intrusive_ptr < Resource<VertexBuffer> > vertexBuffer;
     AABB aabb;
     Vector3 position;
     Quaternion rotation;
-
+    // todo: think about this: int id_cache; // for quick access - getting resource's id needs mutexing and all
   };
 
   struct ShadowMap {
@@ -72,7 +60,7 @@ namespace blunted {
     Matrix4 lightViewMatrix;
     std::deque < VertexBufferQueueEntry > visibleGeometry;
     boost::intrusive_ptr < Resource<Texture> > texture;
-    int frameBufferID = 0;
+    int frameBufferID;
   };
 
   enum e_ViewRenderTarget {
@@ -82,30 +70,30 @@ namespace blunted {
 
   struct View {
     e_ViewRenderTarget target;
-    int targetTexID = 0;
+    int targetTexID;
     int x, y, width, height;
 
-    int gBufferID = 0;
-    int gBuffer_DepthTexID = 0;
-    int gBuffer_AlbedoTexID = 0;
-    int gBuffer_NormalTexID = 0;
-    int gBuffer_AuxTexID = 0;
+    int gBufferID;
+    int gBuffer_DepthTexID;
+    int gBuffer_AlbedoTexID;
+    int gBuffer_NormalTexID;
+    int gBuffer_AuxTexID;
 
-    int accumBufferID = 0;
-    int accumBuffer_AccumTexID = 0;
-    int accumBuffer_ModifierTexID = 0;
+    int accumBufferID;
+    int accumBuffer_AccumTexID;
+    int accumBuffer_ModifierTexID;
   };
 
   struct LightQueueEntry {
-    bool hasShadow = false;
+    bool hasShadow;
     Matrix4 lightProjectionMatrix;
     Matrix4 lightViewMatrix;
     boost::intrusive_ptr < Resource<Texture> > shadowMapTexture;
     Vector3 position;
-    int type = 0; // 0 == directional, 1 == point
+    int type; // 0 == directional, 1 == point
     Vector3 color;
-    float radius = 0.0f;
-    bool shadow = false;
+    float radius;
+    bool shadow;
     AABB aabb;
   };
 
@@ -208,18 +196,15 @@ namespace blunted {
 
   struct Shader {
     std::string name;
-    unsigned int programID = 0;
-    unsigned int vertexShaderID = 0;
-    unsigned int fragmentShaderID = 0;
+    unsigned int programID;
+    unsigned int vertexShaderID;
+    unsigned int fragmentShaderID;
   };
 
-  class Renderer3D {
+  class Renderer3D : public Thread {
 
     public:
-      virtual ~Renderer3D() { DO_VALIDATION;};
-      virtual void SetContext() = 0;
-      virtual void DisableContext() = 0;
-      virtual const screenshoot& GetScreen() = 0;
+      virtual ~Renderer3D() {};
 
       virtual void SwapBuffers() = 0;
 
@@ -257,10 +242,12 @@ namespace blunted {
       virtual Matrix4 CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap = -1, float farCap = -1) = 0;
 
       // vertex buffers
-      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, const std::vector<unsigned int>& indices, e_VertexBufferUsage usage) = 0;
+      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) = 0;
       virtual void UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize) = 0;
       virtual void DeleteVertexBuffer(VertexBufferID vertexBufferID) = 0;
       virtual void RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode = e_RenderMode_Full) = 0;
+      virtual void RenderAABB(std::list<VertexBufferQueueEntry> &vertexBufferQueue) = 0;
+      virtual void RenderAABB(std::list<LightQueueEntry> &lightQueue) = 0;
 
       // lights
       virtual void SetLight(const Vector3 &position, const Vector3 &color, float radius) = 0;
@@ -284,6 +271,12 @@ namespace blunted {
       virtual bool CheckFrameBufferStatus() = 0;
       virtual void SetFramebufferGammaCorrection(bool onOff) = 0;
 
+      // render buffers
+      virtual int CreateRenderBuffer() = 0;
+      virtual void DeleteRenderBuffer(int rbID) = 0;
+      virtual void BindRenderBuffer(int rbID) = 0;
+      virtual void SetRenderBufferStorage(e_InternalPixelFormat internalPixelFormat, int width, int height) = 0;
+
       // render targets
       virtual void SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments) = 0;
 
@@ -293,6 +286,7 @@ namespace blunted {
       virtual void PopAttribute() = 0;
       virtual void SetViewport(int x, int y, int width, int height) = 0;
       virtual void GetContextSize(int &width, int &height, int &bpp) = 0;
+      virtual void SetPolygonOffset(float scale, float bias) = 0;
 
       // shaders
       virtual void LoadShader(const std::string &name, const std::string &filename) = 0;
@@ -304,118 +298,17 @@ namespace blunted {
       virtual void SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values) = 0;
       virtual void SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat) = 0;
 
+      virtual void HDRCaptureOverallBrightness() = 0;
+      virtual float HDRGetOverallBrightness() = 0;
+
+      void operator()() = 0;
+
     protected:
       std::map<std::string, Shader> shaders;
       std::map<std::string, Shader>::iterator currentShader;
       std::vector<View> views;
 
   };
-
-  class MockRenderer3D: public Renderer3D {
-   public:
-    MockRenderer3D() { DO_VALIDATION;
-      view_.x = 0;
-      view_.y = 0;
-      view_.width = 10;
-      view_.height = 10;
-    }
-    virtual void SetContext() {}
-    virtual void DisableContext() {}
-    virtual const screenshoot& GetScreen() { DO_VALIDATION; return screen_; }
-    virtual ~MockRenderer3D() { DO_VALIDATION;};
-
-    virtual void SwapBuffers() { DO_VALIDATION;};
-
-    virtual void SetMatrix(const std::string &shaderUniformName, const Matrix4 &matrix) { DO_VALIDATION;}
-
-    virtual void RenderOverlay2D(const std::vector<Overlay2DQueueEntry> &overlay2DQueue) { DO_VALIDATION;}
-    virtual void RenderOverlay2D() { DO_VALIDATION;}
-    virtual void RenderLights(std::deque<LightQueueEntry> &lightQueue, const Matrix4 &projectionMatrix, const Matrix4 &viewMatrix) { DO_VALIDATION;}
-
-
-      // --- new & improved
-
-      // init & exit
-    virtual bool CreateContext(int width, int height, int bpp, bool fullscreen) { DO_VALIDATION; return true;};
-    virtual void Exit() { DO_VALIDATION;};
-
-    virtual int CreateView(float x_percent, float y_percent, float width_percent, float height_percent) { DO_VALIDATION;
-      return 1;
-    }
-    virtual View &GetView(int viewID) { DO_VALIDATION; return view_; }
-    virtual void DeleteView(int viewID) { DO_VALIDATION;}
-
-      // general
-      virtual void SetCullingMode(e_CullingMode cullingMode) { DO_VALIDATION;}
-      virtual void SetBlendingMode(e_BlendingMode blendingMode) { DO_VALIDATION;}
-      virtual void SetDepthFunction(e_DepthFunction depthFunction) { DO_VALIDATION;}
-      virtual void SetDepthTesting(bool OnOff) { DO_VALIDATION;}
-      virtual void SetDepthMask(bool OnOff) { DO_VALIDATION;}
-      virtual void SetBlendingFunction(e_BlendingFunction blendingFunction1, e_BlendingFunction blendingFunction2) { DO_VALIDATION;}
-      virtual void SetTextureMode(e_TextureMode textureMode) { DO_VALIDATION;}
-      virtual void SetColor(const Vector3 &color, float alpha) { DO_VALIDATION;}
-      virtual void SetColorMask(bool r, bool g, bool b, bool alpha) { DO_VALIDATION;}
-
-      virtual void ClearBuffer(const Vector3 &color, bool clearDepth, bool clearColor) { DO_VALIDATION;}
-
-      virtual Matrix4 CreatePerspectiveMatrix(float aspectRatio, float nearCap = -1, float farCap = -1) { DO_VALIDATION;
-        return Matrix4(); }
-
-      virtual Matrix4 CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap = -1, float farCap = -1) { DO_VALIDATION; return Matrix4(); }
-
-      // vertex buffers
-      virtual VertexBufferID CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, const std::vector<unsigned int>& indices, e_VertexBufferUsage usage) { DO_VALIDATION; return VertexBufferID(); }
-      virtual void UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize) { DO_VALIDATION;}
-      virtual void DeleteVertexBuffer(VertexBufferID vertexBufferID) { DO_VALIDATION;}
-      virtual void RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode = e_RenderMode_Full) { DO_VALIDATION;}
-
-      // lights
-      virtual void SetLight(const Vector3 &position, const Vector3 &color, float radius) { DO_VALIDATION;}
-
-      // textures
-      virtual int CreateTexture(e_InternalPixelFormat internalPixelFormat, e_PixelFormat pixelFormat, int width, int height, bool alpha = false, bool repeat = true, bool mipmaps = true, bool filter = true, bool multisample = false, bool compareDepth = false) { DO_VALIDATION; return 1;}
-      virtual void ResizeTexture(int textureID, SDL_Surface *source, e_InternalPixelFormat internalPixelFormat, e_PixelFormat pixelFormat, bool alpha = false, bool mipmaps = true) { DO_VALIDATION;}
-      virtual void UpdateTexture(int textureID, SDL_Surface *source, bool alpha = false, bool mipmaps = true) { DO_VALIDATION;}
-      virtual void DeleteTexture(int textureID) { DO_VALIDATION;}
-      virtual void CopyFrameBufferToTexture(int textureID, int width, int height) { DO_VALIDATION;}
-      virtual void BindTexture(int textureID) { DO_VALIDATION;}
-      virtual void SetTextureUnit(int textureUnit) { DO_VALIDATION;}
-      virtual void SetClientTextureUnit(int textureUnit) { DO_VALIDATION;}
-
-      // frame buffer
-      virtual int CreateFrameBuffer() { DO_VALIDATION; return 1;}
-      virtual void DeleteFrameBuffer(int fbID) { DO_VALIDATION;}
-      virtual void BindFrameBuffer(int fbID) { DO_VALIDATION;}
-      virtual void SetFrameBufferRenderBuffer(e_TargetAttachment targetAttachment, int rbID) { DO_VALIDATION;}
-      virtual void SetFrameBufferTexture2D(e_TargetAttachment targetAttachment, int texID) { DO_VALIDATION;}
-      virtual bool CheckFrameBufferStatus() { DO_VALIDATION; return true; }
-      virtual void SetFramebufferGammaCorrection(bool onOff) { DO_VALIDATION;}
-
-      // render targets
-      virtual void SetRenderTargets(std::vector<e_TargetAttachment> targetAttachments) { DO_VALIDATION;}
-
-      // utility
-      virtual void SetFOV(float angle) { DO_VALIDATION;}
-      virtual void PushAttribute(int attr) { DO_VALIDATION;}
-      virtual void PopAttribute() { DO_VALIDATION;}
-      virtual void SetViewport(int x, int y, int width, int height) { DO_VALIDATION;}
-      virtual void GetContextSize(int &width, int &height, int &bpp) { DO_VALIDATION;}
-
-      // shaders
-      virtual void LoadShader(const std::string &name, const std::string &filename) { DO_VALIDATION;}
-      virtual void UseShader(const std::string &name) { DO_VALIDATION;}
-      virtual void SetUniformInt(const std::string &shaderName, const std::string &varName, int value) { DO_VALIDATION;}
-      virtual void SetUniformFloat(const std::string &shaderName, const std::string &varName, float value) { DO_VALIDATION;}
-      virtual void SetUniformFloat2(const std::string &shaderName, const std::string &varName, float value1, float value2) { DO_VALIDATION;}
-      virtual void SetUniformFloat3(const std::string &shaderName, const std::string &varName, float value1, float value2, float value3) { DO_VALIDATION;}
-      virtual void SetUniformFloat3Array(const std::string &shaderName, const std::string &varName, int count, float *values) { DO_VALIDATION;}
-      virtual void SetUniformMatrix4(const std::string &shaderName, const std::string &varName, const Matrix4 &mat) { DO_VALIDATION;}
-
-    protected:
-      View view_;
-      screenshoot screen_;
-  };
-
 
 }
 

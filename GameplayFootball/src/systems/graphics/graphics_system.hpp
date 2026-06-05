@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2014
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -18,62 +5,70 @@
 #ifndef _HPP_SYSTEMS_GRAPHICS_SYSTEM
 #define _HPP_SYSTEMS_GRAPHICS_SYSTEM
 
-#include "../../defines.hpp"
+#include "defines.hpp"
 
-#include "../../types/messagequeue.hpp"
-#include "../../systems/isystem.hpp"
-#include "../../systems/graphics/rendering/opengl_renderer3d.hpp"
+#include "systems/isystem.hpp"
+#include "systems/isystemscene.hpp"
+#include "systems/graphics/rendering/opengl_renderer3d.hpp"
 
-#include "../../scene/iscene.hpp"
+#include "scene/iscene.hpp"
 
 #include "graphics_task.hpp"
 
 #include "resources/texture.hpp"
 #include "resources/vertexbuffer.hpp"
 
-#include "../../managers/resourcemanager.hpp"
+#include "managers/resourcemanager.hpp"
 
 namespace blunted {
 
   class Renderer3D;
-  class GraphicsScene;
 
-  class GraphicsSystem {
+  class GraphicsSystem : public ISystem {
 
     public:
       GraphicsSystem();
       virtual ~GraphicsSystem();
 
-      virtual void Initialize(bool render, int width_, int height_);
+      virtual void Initialize(const Properties &config);
       virtual void Exit();
-      void SetContext();
-      void DisableContext();
-      const screenshoot& GetScreen();
 
       e_SystemType GetSystemType() const;
 
-      GraphicsScene *Create2DScene(boost::shared_ptr<IScene> scene);
-      GraphicsScene *Create3DScene(boost::shared_ptr<IScene> scene);
+      virtual ISystemScene *CreateSystemScene(boost::shared_ptr<IScene> scene);
 
-      GraphicsTask *GetTask();
+      virtual ISystemTask *GetTask();
       virtual Renderer3D *GetRenderer3D();
+
+      boost::shared_ptr < ResourceManager<Texture> > GetTextureResourceManager();
+      boost::shared_ptr < ResourceManager<VertexBuffer> > GetVertexBufferResourceManager();
 
       MessageQueue<Overlay2DQueueEntry> &GetOverlay2DQueue();
 
-      Vector3 GetContextSize() { DO_VALIDATION; return Vector3(width, height, bpp); }
+      void GetContextSize(int &width, int &height, int &bpp) { width = this->width; height = this->height; bpp = this->bpp; }
+      Vector3 GetContextSize() { return Vector3(width, height, bpp); }
+
+      int GetAverageFrameTime_ms(unsigned int frameCount) const { assert(task); return task->GetAverageFrameTime_ms(frameCount); };
+      unsigned long GetLastSwapTime_ms() const { assert(task); return task->GetLastSwapTime_ms(); }
+      int GetTimeSinceLastSwap_ms() const { assert(task); return task->GetTimeSinceLastSwap_ms(); }
 
       virtual std::string GetName() const { return "graphics"; }
 
+      boost::mutex getPhaseMutex;
+
     protected:
-      const e_SystemType systemType = e_SystemType_Graphics;
+      const e_SystemType systemType;
 
-      Renderer3D *renderer3DTask = 0;
+      Renderer3D *renderer3DTask;
 
-      GraphicsTask *task = 0;
+      GraphicsTask *task;
+
+      boost::shared_ptr < ResourceManager<Texture> > textureResourceManager;
+      boost::shared_ptr < ResourceManager<VertexBuffer> > vertexBufferResourceManager;
 
       MessageQueue<Overlay2DQueueEntry> overlay2DQueue;
 
-      int width = 0, height = 0, bpp = 0;
+      int width, height, bpp;
 
   };
 

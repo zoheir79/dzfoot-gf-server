@@ -1,16 +1,3 @@
-// Copyright 2019 Google LLC & Bastiaan Konings
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 // written by bastiaan konings schuiling 2008 - 2015
 // this work is public domain. the code is undocumented, scruffy, untested, and should generally not be used for anything important.
 // i do not offer support, so don't ask. to be used for inspiration :)
@@ -25,103 +12,119 @@
 #include "../../main.hpp"
 #include "../../utils.hpp"
 
-#include "../../base/geometry/triangle.hpp"
+#include "base/geometry/triangle.hpp"
 
-PlayerBase::PlayerBase(Match *match, PlayerData *playerData)
-    : match(match),
-      playerData(playerData),
-      stable_id(GetContext().stablePlayerCount++) {
-  DO_VALIDATION;
+int PlayerBase::playerCount = 0;
+
+PlayerBase::PlayerBase(Match *match, PlayerData *playerData) : match(match), playerData(playerData), id(playerCount++), humanoid(0), controller(0), externalController(0), isActive(false) {
+  debug = false;
   lastTouchTime_ms = 0;
   lastTouchType = e_TouchType_None;
   fatigueFactorInv = 1.0;
+  confidenceFactor = 1.0;
+
+  averageStat = GetStat("physical_balance") +
+                GetStat("physical_reaction") +
+                GetStat("physical_acceleration") +
+                GetStat("physical_velocity") +
+                GetStat("physical_stamina") +
+                GetStat("physical_agility") +
+                GetStat("physical_shotpower") +
+                GetStat("technical_standingtackle") +
+                GetStat("technical_slidingtackle") +
+                GetStat("technical_ballcontrol") +
+                GetStat("technical_dribble") +
+                GetStat("technical_shortpass") +
+                GetStat("technical_highpass") +
+                GetStat("technical_header") +
+                GetStat("technical_shot") +
+                GetStat("technical_volley") +
+                GetStat("mental_calmness") +
+                GetStat("mental_workrate") +
+                GetStat("mental_resilience") +
+                GetStat("mental_defensivepositioning") +
+                GetStat("mental_offensivepositioning") +
+                GetStat("mental_vision");
+  averageStat /= 22.0;
+
+  //if (Verbose()) printf("player '%s' has an average stat of %f\n", playerData->GetLastName().c_str(), averageStat);
+  Log(e_Notice, "PlayerBase", "PlayerBase", "player '" + playerData->GetLastName() + "' has an average stat of " + real_to_str(averageStat));
+
 }
 
 PlayerBase::~PlayerBase() {
-  DO_VALIDATION;
+  if (Verbose()) printf("exiting playerbase.. ");
   if (isActive) Deactivate();
-}
-
-void PlayerBase::Mirror() {
-  humanoid->Mirror();
+  if (Verbose()) printf("deleting humanoid.. ");
+  if (humanoid) delete humanoid;
+  if (Verbose()) printf("done\n");
 }
 
 void PlayerBase::Deactivate() {
-  DO_VALIDATION;
   ResetSituation(GetPosition());
 
-  if (humanoid) humanoid->Hide();
   isActive = false;
-  externalController = nullptr;
+
+  if (humanoid) humanoid->Hide();
+
+  if (externalController) externalController = 0;
+  delete controller;
 }
 
 IController *PlayerBase::GetController() {
-  DO_VALIDATION;
-  if (ExternalControllerActive()) {
-    return externalController->GetHumanController();
-  } else {
-    return controller.get();
-  }
+  if (externalController) return externalController;
+                     else return controller;
 }
 
 void PlayerBase::RequestCommand(PlayerCommandQueue &commandQueue) {
-  DO_VALIDATION;
-  if (ExternalControllerActive()) {
-    externalController->GetHumanController()->RequestCommand(commandQueue);
-  } else {
-    controller->RequestCommand(commandQueue);
-  }
+  if (externalController) externalController->RequestCommand(commandQueue);
+                     else controller->RequestCommand(commandQueue);
 }
 
-void PlayerBase::SetExternalController(HumanGamer *externalController) {
-  DO_VALIDATION;
+void PlayerBase::SetExternalController(IController *externalController) {
   this->externalController = externalController;
   if (this->externalController) {
-    DO_VALIDATION;
-    this->externalController->GetHumanController()->Reset();
-    this->externalController->GetHumanController()->SetPlayer(this);
+    this->externalController->Reset();
+    this->externalController->SetPlayer(this);
+    this->externalController->SetFallbackController(controller);
+    //debug = true;
   } else {
     controller->Reset();
+    //debug = false;
   }
 }
 
-HumanController *PlayerBase::ExternalController() {
-  DO_VALIDATION;
-  return externalController ? externalController->GetHumanController() : nullptr;
+void PlayerBase::SetDebug(bool state) {
+  debug = state;
 }
 
-bool PlayerBase::ExternalControllerActive() {
-  DO_VALIDATION;
-  return externalController && !externalController->GetHumanController()->Disabled();
+bool PlayerBase::GetDebug() const {
+  if (IsReleaseVersion()) return false; else return debug;
 }
 
 void PlayerBase::Process() {
-  DO_VALIDATION;
   if (isActive) {
-    DO_VALIDATION;
-    if (ExternalControllerActive()) externalController->GetHumanController()->Process(); else controller->Process();
+    if (externalController) externalController->Process(); else controller->Process();
     humanoid->Process();
   } else {
     if (humanoid) humanoid->Hide();
   }
+  //if (debug) printf("::%f velo\n", GetMovement().GetLength());
 }
 
-void PlayerBase::PreparePutBuffers() {
-  DO_VALIDATION;
-  humanoid->PreparePutBuffers();
+void PlayerBase::PreparePutBuffers(unsigned long snapshotTime_ms) {
+  humanoid->PreparePutBuffers(snapshotTime_ms);
 }
 
-void PlayerBase::FetchPutBuffers() {
-  DO_VALIDATION;
-  humanoid->FetchPutBuffers();
+void PlayerBase::FetchPutBuffers(unsigned long putTime_ms) {
+  humanoid->FetchPutBuffers(putTime_ms);
 }
 
-void PlayerBase::Put(bool mirror) {
-  DO_VALIDATION;
-  humanoid->Put(mirror);
+void PlayerBase::Put() {
+  humanoid->Put();
 }
 
-float PlayerBase::GetStat(PlayerStat name) const {
+float PlayerBase::GetStat(const char *name) const {
   return playerData->GetStat(name);
 }
 
@@ -132,11 +135,10 @@ float PlayerBase::GetMaxVelocity() const {
 
 float PlayerBase::GetVelocityMultiplier() const {
   // see humanoid_utils' physics function
-  return 0.9f + playerData->get_physical_velocity() * 0.1f;
+  return 0.9f + GetStat("physical_velocity") * 0.1f;
 }
 
 float PlayerBase::GetLastTouchBias(int decay_ms, unsigned long time_ms) {
-  DO_VALIDATION;
   unsigned long adaptedTime_ms = time_ms;
   if (time_ms == 0) adaptedTime_ms = match->GetActualTime_ms();
   if (decay_ms > 0) return 1.0f - clamp((adaptedTime_ms - GetLastTouchTime_ms()) / (float)decay_ms, 0.0f, 1.0f);
@@ -144,24 +146,9 @@ float PlayerBase::GetLastTouchBias(int decay_ms, unsigned long time_ms) {
 }
 
 void PlayerBase::ResetSituation(const Vector3 &focusPos) {
-  DO_VALIDATION;
   positionHistoryPerSecond.clear();
   lastTouchTime_ms = 0;
   lastTouchType = e_TouchType_None;
   if (IsActive()) humanoid->ResetSituation(focusPos);
   if (GetController()) GetController()->Reset();
-}
-
-void PlayerBase::ProcessStateBase(EnvState *state) {
-  DO_VALIDATION;
-  state->process(isActive);
-  humanoid->ProcessState(state);
-  if (IsActive()) {
-    controller->ProcessState(state);
-  }
-  state->process(externalController);
-  state->process(lastTouchTime_ms);
-  state->process(lastTouchType);
-  state->process(fatigueFactorInv);
-  state->process(positionHistoryPerSecond);
 }

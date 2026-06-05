@@ -17,104 +17,128 @@
 
 #include "image.hpp"
 
-#include <SDL2_rotozoom.h>
-
-#include "../main.hpp"
 #include "../windowmanager.hpp"
-#include "file.h"
 
-#ifdef WIN32
-#include <SDL2/SDL_image.h>
-#endif
+#include "SDL2/SDL2_rotozoom.h"
 
 namespace blunted {
-
-SDL_Surface *IMG_LoadBmp(const std::string &file) {
-  DO_VALIDATION;
-  std::string name = GetGameConfig().updatePath(file);
-  name = name.substr(0, name.length() - 4) + ".bmp";
-#ifdef WIN32
-  auto image = IMG_Load(name.c_str());
-#else
-  std::string file_data = GetFile(name);
-  SDL_RWops *rw = SDL_RWFromConstMem(file_data.data(), file_data.size());
-  auto image = SDL_LoadBMP_RW(rw, 1);
-#endif
-
-  if (image->format->format == SDL_PIXELFORMAT_ARGB8888) {
-    DO_VALIDATION;
-    SDL_Surface *tmp =
-        SDL_ConvertSurfaceFormat(image, SDL_PIXELFORMAT_ABGR8888, 0);
-    SDL_FreeSurface(image);
-    image = tmp;
-  } else if (image->format->format == SDL_PIXELFORMAT_BGR24) {
-    DO_VALIDATION;
-    SDL_Surface *tmp =
-        SDL_ConvertSurfaceFormat(image, SDL_PIXELFORMAT_RGB24, 0);
-    SDL_FreeSurface(image);
-    image = tmp;
-  }
-  return image;
-}
 
 Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
                      float x_percent, float y_percent, float width_percent,
                      float height_percent)
     : Gui2View(windowManager, name, x_percent, y_percent, width_percent,
                height_percent) {
-  DO_VALIDATION;
-  int x, y, w, h;
-  windowManager->GetCoordinates(x_percent, y_percent, width_percent,
-                                height_percent, x, y, w, h);
-  image = windowManager->CreateImage2D(name, w, h, true);
-}
+    int x, y, w, h;
+    windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
+    image = windowManager->CreateImage2D(name, w, h, true);
+  }
 
-Gui2Image::~Gui2Image() { DO_VALIDATION; }
+  Gui2Image::~Gui2Image() {
+  }
 
-void Gui2Image::LoadImage(const std::string &filename) {
-  DO_VALIDATION;
-  SDL_Surface *imageSurfTmp = IMG_LoadBmp(filename);
-  imageSource = windowManager->CreateImage2D(name + "source", imageSurfTmp->w,
-                                             imageSurfTmp->h, false);
+  void Gui2Image::LoadImage(const std::string &filename) {
+    SDL_Surface *imageSurfTmp = IMG_Load(filename.c_str());
+    imageSource = windowManager->CreateImage2D(name + "source", imageSurfTmp->w, imageSurfTmp->h, false);
 
-  boost::intrusive_ptr<Resource<Surface> > surfaceRes = imageSource->GetImage();
-  surfaceRes->GetResource()->SetData(imageSurfTmp);
-  Redraw();
-}
+    boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+    surfaceRes->resourceMutex.lock();
+    surfaceRes->GetResource()->SetData(imageSurfTmp);
+    surfaceRes->resourceMutex.unlock();
 
-void Gui2Image::Redraw() {
-  DO_VALIDATION;
+    Redraw();
+  }
 
-  // paste source image onto screen image
-  if (imageSource != boost::intrusive_ptr<Image2D>()) {
-    DO_VALIDATION;
+  void Gui2Image::Redraw() {
 
-    // get image
-    boost::intrusive_ptr<Resource<Surface> > surfaceRes =
-        imageSource->GetImage();
+    // paste source image onto screen image
+    if (imageSource != boost::intrusive_ptr<Image2D>()) {
 
-    SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
+      // get image
+      boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+      surfaceRes->resourceMutex.lock();
+
+      SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
+
+      int x, y, w, h;
+      windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
+
+      double zoomx;
+      zoomx = (double)w / imageSurfTmp->w;
+      double zoomy;
+      zoomy = (double)h / imageSurfTmp->h;
+      SDL_Surface *imageSurf = zoomSurface(imageSurfTmp, zoomx, zoomy, 1);
+      //printf("actually resized to %i %i\n", imageSurf->w, imageSurf->h);
+
+      surfaceRes->resourceMutex.unlock();
+
+      surfaceRes = image->GetImage();
+      surfaceRes->resourceMutex.lock();
+
+      surfaceRes->GetResource()->SetData(imageSurf);
+
+      surfaceRes->resourceMutex.unlock();
+
+      image->OnChange();
+    }
+
+  }
+
+  void Gui2Image::GetImages(std::vector < boost::intrusive_ptr<Image2D> > &target) {
+    target.push_back(image);
+    Gui2View::GetImages(target);
+  }
+
+  void Gui2Image::SetSize(float new_width_percent, float new_height_percent) {
+    Gui2View::SetSize(new_width_percent, new_height_percent);
 
     int x, y, w, h;
-    windowManager->GetCoordinates(x_percent, y_percent, width_percent,
-                                  height_percent, x, y, w, h);
+    windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
+    //printf("resized to %i %i\n", w, h);
 
-    double zoomx;
-    zoomx = (double)w / imageSurfTmp->w;
-    double zoomy;
-    zoomy = (double)h / imageSurfTmp->h;
-    SDL_Surface *imageSurf = zoomSurface(imageSurfTmp, zoomx, zoomy, 1);
-    // printf("actually resized to %i %i\n", imageSurf->w, imageSurf->h);
-
-    surfaceRes = image->GetImage();
-    surfaceRes->GetResource()->SetData(imageSurf);
-    image->OnChange();
+    image->Resize(w, h);
+    Redraw();
   }
-}
 
-void Gui2Image::GetImages(std::vector<boost::intrusive_ptr<Image2D> > &target) {
-  DO_VALIDATION;
-  target.push_back(image);
-  Gui2View::GetImages(target);
-}
+  void Gui2Image::SetZoom(float zoomx, float zoomy) {
+
+    // paste source image onto screen image
+    if (imageSource != boost::intrusive_ptr<Image2D>()) {
+
+      // get image
+      boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+      surfaceRes->resourceMutex.lock();
+
+      SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
+
+      int x, y, w, h;
+      windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
+
+      double zoomx1;
+      zoomx1 = (double)w / imageSurfTmp->w * zoomx;
+      double zoomy1;
+      zoomy1 = (double)h / imageSurfTmp->h * zoomy;
+      SDL_Surface *imageSurf = zoomSurface(imageSurfTmp, zoomx1, zoomy1, 1);
+      //printf("actually resized to %i %i\n", imageSurf->w, imageSurf->h);
+
+      surfaceRes->resourceMutex.unlock();
+
+      image->DrawRectangle(0, 0, w, h, Vector3(0, 0, 0), 0);
+
+      surfaceRes = image->GetImage();
+      surfaceRes->resourceMutex.lock();
+
+      SDL_Surface *surface = surfaceRes->GetResource()->GetData();
+      SDL_Rect rect;
+      rect.x = w * 0.5 - imageSurf->w * 0.5;
+      rect.y = h * 0.5 - imageSurf->h * 0.5;
+      SDL_BlitSurface(imageSurf, NULL, surface, &rect);
+
+      surfaceRes->resourceMutex.unlock();
+
+      SDL_FreeSurface(imageSurf);
+
+      image->OnChange();
+    }
+  }
+
 }
