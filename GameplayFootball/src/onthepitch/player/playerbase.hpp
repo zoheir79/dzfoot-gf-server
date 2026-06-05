@@ -55,6 +55,7 @@ class PlayerBase {
     IController *GetController();
     void SetExternalController(IController *externalController);
     IController *GetExternalController() { return externalController; }
+    bool ExternalControllerActive() { return externalController != nullptr; }
 
     void SetDebug(bool state);
     bool GetDebug() const;

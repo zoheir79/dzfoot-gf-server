@@ -12,6 +12,7 @@
 namespace blunted {
   class IHIDevice;
   class Match;
+  class GameTask;
   class Team;
   class Player;
   class Ball;
@@ -64,8 +65,9 @@ class DZFootEnv {
   DZFootMatchState GetMatchState();
   std::vector<DZFootPlayerState> GetPlayerStates();
 
-  // Direct access to match object (for advanced state extraction)
+  // Direct access to match / game task (for advanced state extraction)
   blunted::Match* GetMatch();
+  blunted::GameTask* GetGameTask();
 
   // Check if match is running
   bool IsMatchRunning() const;

@@ -63,6 +63,7 @@ class Ball {
     void SetMomentum(const Vector3 &target);
     void SetRotation(radian x, radian y, radian z, float bias = 1.0); // radians per second for each axis
     void SetRotation(const Vector3 &rot, float bias = 1.0); // radians per second for each axis
+    Vector3 GetRotation() { radian x, y, z; rotation_ms.GetAngles(x, y, z); return Vector3(x, y, z); }  // DZFoot: stub for GameServer
     BallSpatialInfo CalculatePrediction(); // returns momentum in 10ms
     Vector3 GetPositionBuffer() { return buf_positionBuffer.GetValue(EnvironmentManager::GetInstance().GetTime_ms()); }
 

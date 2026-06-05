@@ -103,7 +103,7 @@ set(LIBRARIES gamelib hidlib menulib datalib leaguelib blunted2
    ${SDL2_LIBRARIES} ${OPENAL_LIBRARY} dl m ${OPENGL_LIBRARIES})
 
 # DZFoot: server library (headless, no int main())
-add_library(game STATIC ${CORE_SOURCES} ${CORE_HEADERS})
+add_library(game SHARED ${CORE_SOURCES} ${CORE_HEADERS})
 target_compile_definitions(game PRIVATE DZFOOT_HEADLESS)
 target_link_libraries(game ${LIBRARIES})
 

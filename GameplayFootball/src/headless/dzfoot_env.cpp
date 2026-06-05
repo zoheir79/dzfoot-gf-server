@@ -248,6 +248,11 @@ Match* DZFootEnv::GetMatch() {
   return gameTask->GetMatch();
 }
 
+GameTask* DZFootEnv::GetGameTask() {
+  if (!gameTask) return nullptr;
+  return gameTask.get();
+}
+
 bool DZFootEnv::IsMatchRunning() const {
   return matchRunning_;
 }

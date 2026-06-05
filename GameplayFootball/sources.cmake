@@ -377,6 +377,7 @@ set(CORE_HEADERS
    src/gamedefines.hpp
    src/utils.hpp
    src/main.hpp
+   src/game_env.hpp
    src/headless/dzfoot_env.hpp
    src/gametask.hpp
    src/dbquery.hpp
@@ -391,6 +392,7 @@ set(CORE_SOURCES
    src/main.cpp
    src/dbquery.cpp
    src/gamedefines.cpp
+   src/game_env.cpp
    src/headless/dzfoot_env.cpp
 )
 

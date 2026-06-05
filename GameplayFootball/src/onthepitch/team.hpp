@@ -28,6 +28,8 @@ class Team {
 
     int GetID() const { return id; }
     signed int GetSide();
+    bool isMirrored() const { return false; }  // DZFoot: vi3itor has no artificial mirroring
+    signed int GetDynamicSide() const { return GetSide(); }  // DZFoot: no dynamic mirroring
     TeamData *GetTeamData() { return teamData; }
 
     Player *GetPlayer(int playerID);
@@ -84,6 +86,7 @@ class Team {
     Player *GetGoalie();
 
     void SetKitNumber(int num);
+    Player *MainSelectedPlayer() { return nullptr; }  // DZFoot: no human selection in headless
 
   protected:
     int id;

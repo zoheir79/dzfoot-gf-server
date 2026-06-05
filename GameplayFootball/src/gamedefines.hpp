@@ -250,6 +250,9 @@ struct FormationEntry {
   e_PlayerRole role;
   Vector3 databasePosition;
   Vector3 position; // adapted to player role (combination of databasePosition and hardcoded role position)
+  Vector3 start_position;       // DZFoot: for server-side formation init
+  bool controllable = false;  // DZFoot: for server-side controller assignment
+  bool lazy = false;            // DZFoot: for server-side formation init
 };
 
 struct PlayerImage {
