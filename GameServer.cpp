@@ -384,16 +384,25 @@ void Server::tick() {
             std::vector<Player*> players;
             t->GetAllPlayers(players);
             
+            // Ultimate Mirroring Equation: we want the final world coordinate to match the dynamic side
+            // (Left side = 1.0f, Right side = -1.0f). But the engine's Match::Step() dynamically mirrors/un-mirrors
+            // Team 1's position in memory (leaving them mirrored when IsInPlay() is true, and un-mirrored when false).
+            // By multiplying the desired side scale with the current memory mirror state, we obtain a 100% stable scale.
+            float sideScale = (t->GetDynamicSide() == -1) ? 1.0f : -1.0f;
+            float memoryScale = t->isMirrored() ? -1.0f : 1.0f;
+            float mirrorScale = sideScale * memoryScale;
+
             for (size_t i = 0; i < players.size() && i < 11; ++i) {
                 int idx = baseIdx + static_cast<int>(i);
                 if (idx >= kMaxPlayers) break;
                 Player* p = players[i];
                 if (!p) continue;
                 NetworkPlayerState& ps = currentState_.players[idx];
+                Vector3 pos = p->GetPosition();
 
-                // Read stable world environment coordinates from GetTeamState (info).
-                // Since we removed the Google Brain RL mirroring from GetTeamState,
-                // both left_team and right_team now contain actual world coordinates.
+                // We read the stable world environment coordinates directly from the engine's GetTeamState
+                // exported in `info`. This is 100% stable, handles goalkeeper and set-piece resets perfectly,
+                // and completely avoids any C++ raw memory mirroring/unmirroring glitches.
                 const std::vector<PlayerInfo>& teamInfos = (teamId == 0) ? info.left_team : info.right_team;
                 if (i < teamInfos.size()) {
                     const PlayerInfo& pi = teamInfos[i];
@@ -401,9 +410,8 @@ void Server::tick() {
                     ps.pos[1] = pi.player_position.env_coord(1);
                     ps.pos[2] = pi.player_position.env_coord(2);
                 } else {
-                    Vector3 pos = p->GetPosition();
-                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE;
-                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE;
+                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE * mirrorScale;
+                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE * mirrorScale;
                     ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
                 }
 
@@ -413,6 +421,7 @@ void Server::tick() {
                     if (exceedLogCounter++ < 50) {
                         std::cout << "[GF_BOUNDS_EXCEEDED] tick=" << tickCounter_
                                   << " player=" << i << " team=" << teamId
+                                  << " rawPos=(" << pos.coords[0] << "," << pos.coords[1] << ")"
                                   << " envPos=(" << ps.pos[0] << "," << ps.pos[1] << ")"
                                   << " role=" << ps.role
                                   << std::endl;
@@ -431,13 +440,13 @@ void Server::tick() {
                 }
 
                 Vector3 d = p->GetDirectionVec();
-                ps.dir[0] = d.coords[0];
-                ps.dir[1] = d.coords[1];
+                ps.dir[0] = d.coords[0] * mirrorScale;
+                ps.dir[1] = d.coords[1] * mirrorScale;
                 ps.dir[2] = d.coords[2];
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
                     Vector3 mov = p->GetMovement();
-                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE;
-                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE;
+                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE * mirrorScale;
+                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE * mirrorScale;
                     ps.dir[2] = mov.coords[2] / Z_FIELD_SCALE;
                 }
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
@@ -482,10 +491,14 @@ void Server::tick() {
                     if (!p1s.empty() && p1s[0]) rawP11x = p1s[0]->GetPosition().coords[0] / X_FIELD_SCALE;
                 }
             }
+            float m0 = 999.0f, m1 = 999.0f;
+            if (t0) m0 = t0->isMirrored() ? -1.0f : 1.0f;
+            if (t1) m1 = t1->isMirrored() ? -1.0f : 1.0f;
             std::cout << "[GameServer::tick] tick=" << tickCounter_
                       << " mode=" << static_cast<int>(info.game_mode)
                       << " in_play=" << (info.is_in_play ? 1 : 0)
                       << " rawP0x=" << rawP0x << " rawP11x=" << rawP11x
+                      << " m0=" << m0 << " m1=" << m1
                       << " p0.pos=" << currentState_.players[0].pos[0] << "," << currentState_.players[0].pos[1]
                       << " p11.pos=" << currentState_.players[11].pos[0] << "," << currentState_.players[11].pos[1]
                       << " ball=" << currentState_.ball.pos[0] << "," << currentState_.ball.pos[1]

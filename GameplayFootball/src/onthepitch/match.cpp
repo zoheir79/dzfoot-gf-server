@@ -784,6 +784,10 @@ void Match::GetTeamState(SharedInfo *state,
       DO_VALIDATION;
       auto position = player->GetPosition();
       auto movement = player->GetMovement();
+      if (team_id == 1) {
+        position.Mirror();
+        movement.Mirror();
+      }
       PlayerInfo info;
       info.player_position = position.coords;
       info.player_direction =
