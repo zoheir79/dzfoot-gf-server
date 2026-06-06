@@ -3,6 +3,9 @@
 #include <iostream>
 #include <cstring>
 #include <poll.h>
+#include <thread>
+#include <chrono>
+#include <algorithm>
 
 RedisClient::RedisClient() = default;
 
@@ -90,43 +93,88 @@ void RedisClient::disconnect() {
     }
 }
 
+static void redisBackoffSleep(int attempt) {
+    // Exponential backoff: 50ms, 100ms, 200ms, 400ms, max 800ms
+    int ms = std::min(50 * (1 << attempt), 800);
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
+
 bool RedisClient::publish(const std::string& channel, const std::string& message) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!ensureConnected()) return false;
-    redisReply* r = (redisReply*)redisCommand(ctx_, "PUBLISH %s %s", channel.c_str(), message.c_str());
-    if (!r) {
-        disconnect();
-        return false;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (!ensureConnected()) {
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        redisReply* r = (redisReply*)redisCommand(ctx_, "PUBLISH %s %s", channel.c_str(), message.c_str());
+        if (!r) {
+            std::cerr << "[RedisClient] publish disconnect (attempt " << attempt + 1 << ")" << std::endl;
+            disconnect();
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        bool ok = (r->type != REDIS_REPLY_ERROR);
+        if (!ok) {
+            std::cerr << "[RedisClient] publish error: " << r->str << " (attempt " << attempt + 1 << ")" << std::endl;
+        }
+        freeReplyObject(r);
+        if (ok) return true;
+        redisBackoffSleep(attempt);
     }
-    bool ok = (r->type != REDIS_REPLY_ERROR);
-    freeReplyObject(r);
-    return ok;
+    std::cerr << "[RedisClient] publish FAILED after 3 attempts: " << channel << std::endl;
+    return false;
 }
 
 bool RedisClient::publishBinary(const std::string& channel, const uint8_t* data, size_t len) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!ensureConnected()) return false;
-    redisReply* r = (redisReply*)redisCommand(ctx_, "PUBLISH %s %b", channel.c_str(), data, len);
-    if (!r) {
-        disconnect();
-        return false;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (!ensureConnected()) {
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        redisReply* r = (redisReply*)redisCommand(ctx_, "PUBLISH %s %b", channel.c_str(), data, len);
+        if (!r) {
+            std::cerr << "[RedisClient] publishBinary disconnect (attempt " << attempt + 1 << ")" << std::endl;
+            disconnect();
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        bool ok = (r->type != REDIS_REPLY_ERROR);
+        if (!ok) {
+            std::cerr << "[RedisClient] publishBinary error: " << r->str << " (attempt " << attempt + 1 << ")" << std::endl;
+        }
+        freeReplyObject(r);
+        if (ok) return true;
+        redisBackoffSleep(attempt);
     }
-    bool ok = (r->type != REDIS_REPLY_ERROR);
-    freeReplyObject(r);
-    return ok;
+    std::cerr << "[RedisClient] publishBinary FAILED after 3 attempts: " << channel << " len=" << len << std::endl;
+    return false;
 }
 
 bool RedisClient::hset(const std::string& key, const std::string& field, const std::string& value) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!ensureConnected()) return false;
-    redisReply* r = (redisReply*)redisCommand(ctx_, "HSET %s %s %s", key.c_str(), field.c_str(), value.c_str());
-    if (!r) {
-        disconnect();
-        return false;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (!ensureConnected()) {
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        redisReply* r = (redisReply*)redisCommand(ctx_, "HSET %s %s %s", key.c_str(), field.c_str(), value.c_str());
+        if (!r) {
+            std::cerr << "[RedisClient] hset disconnect (attempt " << attempt + 1 << ")" << std::endl;
+            disconnect();
+            redisBackoffSleep(attempt);
+            continue;
+        }
+        bool ok = (r->type != REDIS_REPLY_ERROR);
+        if (!ok) {
+            std::cerr << "[RedisClient] hset error: " << r->str << " (attempt " << attempt + 1 << ")" << std::endl;
+        }
+        freeReplyObject(r);
+        if (ok) return true;
+        redisBackoffSleep(attempt);
     }
-    bool ok = (r->type != REDIS_REPLY_ERROR);
-    freeReplyObject(r);
-    return ok;
+    std::cerr << "[RedisClient] hset FAILED after 3 attempts: " << key << "/" << field << std::endl;
+    return false;
 }
 
 bool RedisClient::ensureSubscribed(const std::string& channel) {

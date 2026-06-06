@@ -49,8 +49,8 @@ class TeamData {
 
     // vector index# is entry in formation[index#]
     const std::vector<PlayerData*> &GetPlayerData() { return playerData; }
-    int GetPlayerNum() { return playerData.size(); }
-    PlayerData *GetPlayerData(int num) { return playerData.at(num); }
+    int GetPlayerNum() const { return playerData.size(); }
+    PlayerData *GetPlayerData(int num) const { return playerData.at(num); }
     PlayerData *GetPlayerDataByDatabaseID(int id);
 
     void SaveLineup();

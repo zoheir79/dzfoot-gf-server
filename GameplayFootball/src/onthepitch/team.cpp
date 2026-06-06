@@ -99,7 +99,7 @@ void Team::InitPlayers(boost::intrusive_ptr<Node> fullbodyNode, std::map<Vector3
 
 }
 
-signed int Team::GetSide() {
+signed int Team::GetSide() const {
   signed int side;
   if (id == 0) side = -1;
   if (id == 1) side = 1;

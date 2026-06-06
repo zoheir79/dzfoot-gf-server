@@ -58,6 +58,7 @@ class Player : public PlayerBase {
     bool HasPossession() const;
     bool HasBestPossession() const;
     bool HasUniquePossession() const;
+    bool HasCards() const { return cards > 0; }
     inline int GetPossessionDuration_ms() const { return possessionDuration_ms; }
     inline int GetTimeNeededToGetToBall_ms() const { return timeNeededToGetToBall_ms; }
     inline int GetTimeNeededToGetToBall_optimistic_ms() const { return timeNeededToGetToBall_optimistic_ms; }

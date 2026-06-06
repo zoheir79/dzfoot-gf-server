@@ -107,9 +107,13 @@ const std::vector<e_PlayerRole> &PlayerData::GetRoles() const {
   return roles;
 }
 
-float PlayerData::GetStat(const char *name) {
+float PlayerData::GetStat(const char *name) const {
   bool exists = stats.Exists(name);
   if (!exists) printf("Stat named '%s' does not exist!\n", name);
   assert(exists);
   return stats.GetReal(name, 1.0f);
+}
+
+void PlayerData::SetStat(const std::string& name, float value) {
+  stats.Set(name.c_str(), value);
 }

@@ -11,6 +11,8 @@
 #include "onthepitch/player/player.hpp"
 #include "onthepitch/ball.hpp"
 
+#include <algorithm>
+
 GameEnv::GameEnv() {}
 
 GameEnv::~GameEnv() {
@@ -48,7 +50,15 @@ SharedInfo GameEnv::get_info() {
   info.ball_position.value[0] = ms.ballPos[0];
   info.ball_position.value[1] = ms.ballPos[1];
   info.ball_position.value[2] = ms.ballPos[2];
+  info.ball_velocity.value[0] = ms.ballVel[0];
+  info.ball_velocity.value[1] = ms.ballVel[1];
+  info.ball_velocity.value[2] = ms.ballVel[2];
   info.is_in_play = ms.inPlay;
+  info.game_mode = ms.game_mode;
+  info.ball_owned_team = ms.ball_owned_team;
+  info.ball_owned_player = ms.ball_owned_player;
+  info.left_goals = ms.score[0];
+  info.right_goals = ms.score[1];
 
   // Fill player info
   Match* match = dzfootEnv_->GetMatch();
@@ -77,6 +87,32 @@ SharedInfo GameEnv::get_info() {
   }
 
   return info;
+}
+
+void GameEnv::apply_formations() {
+  if (!dzfootEnv_) return;
+  Match* match = dzfootEnv_->GetMatch();
+  if (!match) return;
+
+  for (int t = 0; t < 2; t++) {
+    Team* team = match->GetTeam(t);
+    if (!team) continue;
+    const std::vector<FormationEntry>& formation =
+        (t == 0) ? scenario_config.left_team : scenario_config.right_team;
+    if (formation.empty()) continue;
+
+    std::vector<Player*> players;
+    team->GetActivePlayers(players);
+    int n = std::min((int)formation.size(), (int)players.size());
+    for (int i = 0; i < n; i++) {
+      team->SetFormationEntry(players[i]->GetID(), formation[i]);
+    }
+  }
+
+  // Force immediate repositioning so kickoff reflects new formation entries
+  Ball* ball = match->GetBall();
+  Vector3 ballPos = ball ? ball->Predict(0) : Vector3(0, 0, 0);
+  match->ResetSituation(ballPos);
 }
 
 void GameEnv::action(int action, bool left_team, int player) {
@@ -122,10 +158,10 @@ void GameEnv::action(int action, bool left_team, int player) {
       dzfootEnv_->SetButton(team, player, e_ButtonFunction_Sprint, false);
       break;
     case game_shot:
-      dzfootEnv_->SetButton(team, player, e_ButtonFunction_Special, true);
+      dzfootEnv_->SetButton(team, player, e_ButtonFunction_Shot, true);
       break;
     case game_short_pass:
-      dzfootEnv_->SetButton(team, player, e_ButtonFunction_LongPass, true);
+      dzfootEnv_->SetButton(team, player, e_ButtonFunction_ShortPass, true);
       break;
     case game_high_pass:
       dzfootEnv_->SetButton(team, player, e_ButtonFunction_HighPass, true);
@@ -152,7 +188,7 @@ void GameEnv::action(int action, bool left_team, int player) {
       dzfootEnv_->SetButton(team, player, e_ButtonFunction_HighPass, false);
       break;
     case game_release_shot:
-      dzfootEnv_->SetButton(team, player, e_ButtonFunction_Special, false);
+      dzfootEnv_->SetButton(team, player, e_ButtonFunction_Shot, false);
       break;
     case game_release_sliding:
       dzfootEnv_->SetButton(team, player, e_ButtonFunction_Sliding, false);

@@ -24,6 +24,16 @@
 #include "../systems/audio/audio_system.hpp"
 
 #include "../framework/scheduler.hpp"
+#include "../utils/database.hpp"
+
+// Global variables defined in main.cpp, used for headless init/shutdown
+extern GraphicsSystem *graphicsSystem;
+extern Database *db;
+extern boost::shared_ptr<Scene2D> scene2D;
+extern boost::shared_ptr<Scene3D> scene3D;
+extern boost::shared_ptr<GameTask> gameTask;
+extern boost::shared_ptr<MenuTask> menuTask;
+extern std::vector<IHIDevice*> controllers;
 
 #include "../onthepitch/match.hpp"
 #include "../onthepitch/team.hpp"
@@ -47,26 +57,26 @@ DZFootEnv::~DZFootEnv() {
 void DZFootEnv::Initialize(int resX, int resY) {
   if (initialized_) return;
 
-  DoInitialize();
-
   // Config properties
   Properties *config = new Properties();
   config->SetBool("render", false);  // headless
-  config->Set("context_x", resX);
-  config->Set("context_y", resY);
-  config->Set("context_bpp", 32);
-  config->Set("context_fullscreen", 0);
+  config->SetInt("context_x", resX);
+  config->SetInt("context_y", resY);
+  config->SetInt("context_bpp", 32);
+  config->SetInt("context_fullscreen", 0);
   config->Set("graphics3d_renderer", "opengl");
-  config->Set("physics_frametime_ms", 10);  // will be overridden by 60Hz patches
+  config->SetInt("physics_frametime_ms", 10);  // will be overridden by 60Hz patches
+
+  DoInitialize(config);
 
   // Font loading (required by MenuTask even if not rendering)
   std::string fontfilename = config->Get("font_filename", "media/fonts/alegreya/AlegreyaSansSC-ExtraBold.ttf");
-  TTF_Font *defaultFont = TTF_OpenFont(fontfilename.c_str(), 32);
-  if (!defaultFont) {
+  defaultFont_ = TTF_OpenFont(fontfilename.c_str(), 32);
+  if (!defaultFont_) {
     Log(e_FatalError, "dzfoot", "Initialize", "Could not load font " + fontfilename);
   }
-  TTF_Font *defaultOutlineFont = TTF_OpenFont(fontfilename.c_str(), 32);
-  TTF_SetFontOutline(defaultOutlineFont, 2);
+  defaultOutlineFont_ = TTF_OpenFont(fontfilename.c_str(), 32);
+  TTF_SetFontOutline(defaultOutlineFont_, 2);
 
   // Initialize systems
   graphicsSystem = new GraphicsSystem();
@@ -76,6 +86,7 @@ void DZFootEnv::Initialize(int resX, int resY) {
   // Init scenes
   scene2D = boost::shared_ptr<Scene2D>(new Scene2D("scene2D", *config));
   SceneManager::GetInstance().RegisterScene(scene2D);
+  delete config;
 
   scene3D = boost::shared_ptr<Scene3D>(new Scene3D("scene3D"));
   SceneManager::GetInstance().RegisterScene(scene3D);
@@ -84,7 +95,7 @@ void DZFootEnv::Initialize(int resX, int resY) {
   gameTask = boost::shared_ptr<GameTask>(new GameTask());
 
   // Create menu task (needed for MatchData)
-  menuTask = boost::shared_ptr<MenuTask>(new MenuTask(5.0f / 4.0f, 0, defaultFont, defaultOutlineFont));
+  menuTask = boost::shared_ptr<MenuTask>(new MenuTask(5.0f / 4.0f, 0, defaultFont_, defaultOutlineFont_));
 
   // Create remote controllers
   CreateControllers();
@@ -92,10 +103,9 @@ void DZFootEnv::Initialize(int resX, int resY) {
   initialized_ = true;
 }
 
-void DZFootEnv::DoInitialize() {
-  // Initialize the Blunted2 engine core
-  Properties dummyConfig;
-  Initialize(dummyConfig);
+void DZFootEnv::DoInitialize(Properties *config) {
+  // Initialize the Blunted2 engine core (managers, systems, scheduler, scene)
+  blunted::Initialize(*config);
 
   srand((unsigned int)time(NULL));
   rand();  // mingw32 first value bug workaround
@@ -203,6 +213,16 @@ DZFootMatchState DZFootEnv::GetMatchState() {
   state.score[1] = match->GetScore(1);
   state.matchTime_ms = (unsigned long)match->GetMatchTime_ms();
 
+  // Set piece / ball ownership
+  state.game_mode = e_SetPiece_None;
+  Team *team0 = match->GetTeam(0);
+  if (team0 && team0->GetController()) {
+    state.game_mode = (int)team0->GetController()->GetSetPieceType();
+  }
+  state.ball_owned_team = match->GetLastTouchTeamID();
+  Player *lastTouch = match->GetLastTouchPlayer();
+  state.ball_owned_player = lastTouch ? lastTouch->GetID() : -1;
+
   return state;
 }
 
@@ -267,6 +287,9 @@ void DZFootEnv::Shutdown() {
 
   gameTask.reset();
   menuTask.reset();
+
+  if (defaultFont_) { TTF_CloseFont(defaultFont_); defaultFont_ = nullptr; }
+  if (defaultOutlineFont_) { TTF_CloseFont(defaultOutlineFont_); defaultOutlineFont_ = nullptr; }
 
   for (unsigned int i = 0; i < controllers.size(); i++) {
     delete controllers.at(i);

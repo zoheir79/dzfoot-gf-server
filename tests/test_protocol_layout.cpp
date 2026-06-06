@@ -15,7 +15,7 @@ int main() {
     static_assert(sizeof(GameStatePacket) < 1200, "GameStatePacket fits datagram");
     static_assert(sizeof(MatchEventPacket) == 12 + 1 + 1 + 1 + 1 + 12 + 4 + 2 + 2, "MatchEventPacket size");
     static_assert(sizeof(PlayerInputPacket) == 12 + 4 + 4 + 2 + 1 + 1 + 4 + 8, "PlayerInputPacket size");
-    static_assert(sizeof(PlayerStaticInfo) == 3 + 32 + 4 + 4 + 32 + (4 * 21), "PlayerStaticInfo size");
+    static_assert(sizeof(PlayerStaticInfo) == 3 + 32 + 4 + 1 + 1 + 1 + (4 * 21) + 1 + 3, "PlayerStaticInfo size");
     static_assert(sizeof(MatchSetupPacket) == 12 + 1 + 64 + 1 + 1 + (sizeof(PlayerStaticInfo) * 22), "MatchSetupPacket size");
     static_assert(sizeof(TacticalPlayerState) == 44, "TacticalPlayerState size");
     static_assert(sizeof(TacticalStatePacket) < 1200, "TacticalStatePacket fits datagram");

@@ -57,6 +57,11 @@ class Referee {
 
     Player *GetCurrentFoulPlayer() { return foul.foulPlayer; }
     int GetCurrentFoulType() { return foul.foulType; }
+    bool HasOffsidePlayers() const { return !offsidePlayers.empty(); }
+    Player* GetFirstOffsidePlayer() const {
+        if (offsidePlayers.empty()) return nullptr;
+        return offsidePlayers.begin()->first;
+    }
 
   protected:
     Match *match;

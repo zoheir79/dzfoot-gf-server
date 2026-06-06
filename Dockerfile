@@ -1,6 +1,7 @@
 # Build stage
 FROM ubuntu:22.04 AS builder
 
+ARG CACHEBUST=0
 RUN apt-get update && apt-get install -y \
     build-essential git pkg-config ninja-build \
     libcurl4-openssl-dev libssl-dev libhiredis-dev \
@@ -8,20 +9,21 @@ RUN apt-get update && apt-get install -y \
     libopenal-dev libegl1-mesa-dev libgl1-mesa-dev \
     python3-dev python3-pip \
     libboost-python-dev libboost-thread-dev libboost-filesystem-dev libboost-system-dev \
-    libprotobuf-dev protobuf-compiler libabsl-dev \
+    libprotobuf-dev protobuf-compiler libabsl-dev libsqlite3-dev \
     cmake ca-certificates curl wget xz-utils make \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
-ARG CACHEBUST=0
 COPY . .
 
 # Build GameplayFootball + gf_server
 RUN mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
       -DEGL_INCLUDE_DIR=/usr/include/EGL \
-      -DEGL_LIBRARY=/usr/lib/x86_64-linux-gnu/libEGL.so && \
-    make -j$(nproc)
+      -DEGL_LIBRARY=/usr/lib/x86_64-linux-gnu/libEGL.so
+RUN cd build && \
+    (make -j1 2>&1 | tee /tmp/build.log && cp /tmp/build.log /build/build.log) || \
+    (cat /tmp/build.log && cp /tmp/build.log /build/build.log && exit 1)
 
 # Runtime stage
 FROM ubuntu:22.04

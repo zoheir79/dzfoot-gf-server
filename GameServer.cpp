@@ -24,7 +24,10 @@
 #include "onthepitch/player/player.hpp"
 #include "onthepitch/player/playerbase.hpp"
 #include "onthepitch/player/humanoid/humanoid.hpp"
+#include "onthepitch/referee.hpp"
+#include "onthepitch/officials.hpp"
 #include "data/playerdata.hpp"
+#include "data/teamdata.hpp"
 #include "utils.hpp"
 
 namespace GameServer {
@@ -32,7 +35,7 @@ namespace GameServer {
 using namespace dzfoot;
 
 // Forward declaration: defined at end of this namespace
-PlayerStat skillNameToEnum(const std::string& name);
+std::string skillNameToEnum(const std::string& name);
 
 // ------------------------------------------------------------------
 // Helpers
@@ -98,6 +101,11 @@ void Server::sendMatchSetup() {
     if (!gameEnv_ || !cfg_.redis || !cfg_.redis->isConfigured()) return;
 
     MatchSetupPacket setup{};
+    setup.header.magic = dzfoot::DZ_MAGIC;
+    setup.header.version = dzfoot::DZ_PROTOCOL_VERSION;
+    setup.header.type = dzfoot::PACKET_MATCH_SETUP;
+    setup.header.size = sizeof(MatchSetupPacket);
+    setup.header.flags = 0;
     copyString(setup.teamAName, sizeof(setup.teamAName), cfg_.teamA);
     copyString(setup.teamBName, sizeof(setup.teamBName), cfg_.teamB);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
@@ -107,6 +115,24 @@ void Server::sendMatchSetup() {
     if (!match) {
         std::cerr << "[GameServer] sendMatchSetup: match not available" << std::endl;
         return;
+    }
+
+    // Team colors
+    for (int t = 0; t < 2; ++t) {
+        Team* team = match->GetTeam(t);
+        if (!team) continue;
+        TeamData* td = team->GetTeamData();
+        if (!td) continue;
+        Vector3 c1 = td->GetColor1();
+        Vector3 c2 = td->GetColor2();
+        auto* dst1 = (t == 0) ? setup.teamAColor1 : setup.teamBColor1;
+        auto* dst2 = (t == 0) ? setup.teamAColor2 : setup.teamBColor2;
+        dst1[0] = static_cast<uint8_t>(clamp(c1.coords[0] * 255.0f, 0.0f, 255.0f));
+        dst1[1] = static_cast<uint8_t>(clamp(c1.coords[1] * 255.0f, 0.0f, 255.0f));
+        dst1[2] = static_cast<uint8_t>(clamp(c1.coords[2] * 255.0f, 0.0f, 255.0f));
+        dst2[0] = static_cast<uint8_t>(clamp(c2.coords[0] * 255.0f, 0.0f, 255.0f));
+        dst2[1] = static_cast<uint8_t>(clamp(c2.coords[1] * 255.0f, 0.0f, 255.0f));
+        dst2[2] = static_cast<uint8_t>(clamp(c2.coords[2] * 255.0f, 0.0f, 255.0f));
     }
 
     for (int t = 0; t < 2; ++t) {
@@ -122,18 +148,50 @@ void Server::sendMatchSetup() {
             PlayerStaticInfo& ps = setup.players[idx];
             ps.index = static_cast<uint8_t>(idx);
             ps.team = static_cast<uint8_t>(t);
-            ps.role = static_cast<uint8_t>(e_PlayerRole_GK); // default; updated below if possible
+            ps.role = static_cast<uint8_t>(p->GetFormationEntry().role);
+            ps.playerNumber = playerNumbers_[idx] ? playerNumbers_[idx] : static_cast<uint8_t>(i + 1); // config or fallback
+            ps.bodyType = bodyTypes_[idx];
+            ps.beardStyle = beardStyles_[idx];
+            ps.eyeColor = eyeColors_[idx];
 
             const PlayerData* pd = p->GetPlayerData();
             if (pd) {
                 copyString(ps.lastName, sizeof(ps.lastName), pd->GetLastName());
                 ps.height = pd->GetHeight();
                 ps.skinColor = static_cast<uint8_t>(pd->GetSkinColor());
-                copyString(ps.hairStyle, sizeof(ps.hairStyle), pd->GetHairStyle());
-                copyString(ps.hairColor, sizeof(ps.hairColor), pd->GetHairColor());
-                // Extract all 21 stats
+                // Map string hair style/color to compact uint8 indices for network
+                {
+                    std::string hs = pd->GetHairStyle();
+                    if (hs == "long")      ps.hairStyle = 1;
+                    else if (hs == "mohawk") ps.hairStyle = 2;
+                    else if (hs == "curly")  ps.hairStyle = 3;
+                    else if (hs == "ponytail") ps.hairStyle = 4;
+                    else if (hs == "bald")   ps.hairStyle = 5;
+                    else                     ps.hairStyle = 0; // short (default)
+                }
+                {
+                    std::string hc = pd->GetHairColor();
+                    if (hc == "dark_brown")  ps.hairColor = 1;
+                    else if (hc == "brown")   ps.hairColor = 2;
+                    else if (hc == "light_brown") ps.hairColor = 3;
+                    else if (hc == "blonde")  ps.hairColor = 4;
+                    else if (hc == "red")     ps.hairColor = 5;
+                    else if (hc == "grey")    ps.hairColor = 6;
+                    else if (hc == "white")   ps.hairColor = 7;
+                    else                      ps.hairColor = 0; // black (default)
+                }
+                // Extract all 21 stats (order must match skillNameToEnum)
+                static const char* statNames[kNumPlayerStats] = {
+                    "physical_balance", "physical_reaction", "physical_acceleration",
+                    "physical_velocity", "physical_stamina", "physical_agility",
+                    "physical_shotpower", "technical_standingtackle", "technical_slidingtackle",
+                    "technical_ballcontrol", "technical_dribble", "technical_shortpass",
+                    "technical_highpass", "technical_header", "technical_shot",
+                    "technical_volley", "mental_calmness", "mental_workrate",
+                    "mental_resilience", "mental_defensivepositioning", "mental_offensivepositioning"
+                };
                 for (int s = 0; s < kNumPlayerStats; ++s) {
-                    ps.stats[s] = pd->GetStat(static_cast<PlayerStat>(s));
+                    ps.stats[s] = pd->GetStat(statNames[s]);
                 }
             }
         }
@@ -218,6 +276,11 @@ void Server::run() {
         gameEnv_->step();
     }
 
+    // Apply formations (custom or default 4-3-3) to the live match.
+    // Must happen after warm-up so Match/Team objects exist.
+    gameEnv_->apply_formations();
+    std::cout << "[GameServer] Formations applied to live match" << std::endl;
+
     // Inject custom player skills from match config into GF PlayerData
     if (hasCustomConfig) {
         if (!mcfg.left_team.players.empty() || !mcfg.right_team.players.empty()) {
@@ -237,9 +300,17 @@ void Server::run() {
                         PlayerData* pd = ctd->GetPlayerData(i);
                         if (!pd) continue;
                         const auto& profile = tc.players[i];
+
+                        // Inject custom avatar fields into engine PlayerData
+                        pd->SetLastName(profile.name);
+                        pd->SetSkinColor(profile.skinColor);
+                        pd->SetHairStyle(profile.hairStyle);
+                        pd->SetHairColor(profile.hairColor);
+                        pd->SetHeight(profile.height);
+
                         for (const auto& kv : profile.skills) {
-                            PlayerStat stat = skillNameToEnum(kv.first);
-                            if (stat != player_stat_max) {
+                            std::string stat = skillNameToEnum(kv.first);
+                            if (!stat.empty()) {
                                 pd->SetStat(stat, kv.second);
                             } else {
                                 std::cerr << "[GameServer] Unknown skill '" << kv.first
@@ -254,6 +325,22 @@ void Server::run() {
                 applyTeamSkills(1, mcfg.right_team);
                 std::cout << "[GameServer] Custom player skills applied to both teams" << std::endl;
             }
+        }
+
+        // Store avatar configurations from config for MatchSetup
+        for (size_t i = 0; i < mcfg.left_team.players.size() && i < 11; ++i) {
+            const auto& p = mcfg.left_team.players[i];
+            playerNumbers_[i] = static_cast<uint8_t>(p.number);
+            bodyTypes_[i] = static_cast<uint8_t>(p.bodyType);
+            beardStyles_[i] = static_cast<uint8_t>(p.beardStyle);
+            eyeColors_[i] = static_cast<uint8_t>(p.eyeColor);
+        }
+        for (size_t i = 0; i < mcfg.right_team.players.size() && i < 11; ++i) {
+            const auto& p = mcfg.right_team.players[i];
+            playerNumbers_[11 + i] = static_cast<uint8_t>(p.number);
+            bodyTypes_[11 + i] = static_cast<uint8_t>(p.bodyType);
+            beardStyles_[11 + i] = static_cast<uint8_t>(p.beardStyle);
+            eyeColors_[11 + i] = static_cast<uint8_t>(p.eyeColor);
         }
     }
 
@@ -384,14 +471,7 @@ void Server::tick() {
             std::vector<Player*> players;
             t->GetAllPlayers(players);
             
-            // Ultimate Mirroring Equation: we want the final world coordinate to match the dynamic side
-            // (Left side = 1.0f, Right side = -1.0f). But the engine's Match::Step() dynamically mirrors/un-mirrors
-            // Team 1's position in memory (leaving them mirrored when IsInPlay() is true, and un-mirrored when false).
-            // By multiplying the desired side scale with the current memory mirror state, we obtain a 100% stable scale.
-            float sideScale = (t->GetDynamicSide() == -1) ? 1.0f : -1.0f;
-            float memoryScale = t->isMirrored() ? -1.0f : 1.0f;
-            float mirrorScale = sideScale * memoryScale;
-
+            // vi3itor engine: no mirroring. Use raw positions directly.
             for (size_t i = 0; i < players.size() && i < 11; ++i) {
                 int idx = baseIdx + static_cast<int>(i);
                 if (idx >= kMaxPlayers) break;
@@ -410,22 +490,9 @@ void Server::tick() {
                     ps.pos[1] = pi.player_position.env_coord(1);
                     ps.pos[2] = pi.player_position.env_coord(2);
                 } else {
-                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE * mirrorScale;
-                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE * mirrorScale;
+                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE;
+                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE;
                     ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
-                }
-
-                // Diagnostic: log players that exceed expected GF pitch bounds
-                if (std::abs(ps.pos[0]) > 1.05f || std::abs(ps.pos[1]) > 0.43f) {
-                    static int exceedLogCounter = 0;
-                    if (exceedLogCounter++ < 50) {
-                        std::cout << "[GF_BOUNDS_EXCEEDED] tick=" << tickCounter_
-                                  << " player=" << i << " team=" << teamId
-                                  << " rawPos=(" << pos.coords[0] << "," << pos.coords[1] << ")"
-                                  << " envPos=(" << ps.pos[0] << "," << ps.pos[1] << ")"
-                                  << " role=" << ps.role
-                                  << std::endl;
-                    }
                 }
 
                 ps.team = static_cast<uint8_t>(teamId);
@@ -440,13 +507,13 @@ void Server::tick() {
                 }
 
                 Vector3 d = p->GetDirectionVec();
-                ps.dir[0] = d.coords[0] * mirrorScale;
-                ps.dir[1] = d.coords[1] * mirrorScale;
+                ps.dir[0] = d.coords[0];
+                ps.dir[1] = d.coords[1];
                 ps.dir[2] = d.coords[2];
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
                     Vector3 mov = p->GetMovement();
-                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE * mirrorScale;
-                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE * mirrorScale;
+                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE;
+                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE;
                     ps.dir[2] = mov.coords[2] / Z_FIELD_SCALE;
                 }
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
@@ -471,39 +538,48 @@ void Server::tick() {
         fillTeam(0, 0);
         fillTeam(1, 11);
 
-        // Diagnostic: verify what we actually computed for GK positions
-        if (tickCounter_ <= 120 || tickCounter_ % 60 == 0) {
-            Match* diagMatch = gameEnv_->context->gameTask->GetMatch();
-            float rawP0x = 999.0f, rawP11x = 999.0f;
-            Team* t0 = nullptr;
-            Team* t1 = nullptr;
-            if (diagMatch) {
-                t0 = diagMatch->GetTeam(0);
-                t1 = diagMatch->GetTeam(1);
-                if (t0) {
-                    std::vector<Player*> p0s;
-                    t0->GetAllPlayers(p0s);
-                    if (!p0s.empty() && p0s[0]) rawP0x = p0s[0]->GetPosition().coords[0] / X_FIELD_SCALE;
-                }
-                if (t1) {
-                    std::vector<Player*> p1s;
-                    t1->GetAllPlayers(p1s);
-                    if (!p1s.empty() && p1s[0]) rawP11x = p1s[0]->GetPosition().coords[0] / X_FIELD_SCALE;
+        // --- Officials (referee + 2 linesmen) ---
+        if (match) {
+            Officials* officials = match->GetOfficials();
+            if (officials) {
+                struct OffInfo { PlayerOfficial* p; uint8_t role; };
+                OffInfo offs[3] = {
+                    { officials->GetReferee(), 0 },
+                    { officials->GetLinesmanNorth(), 1 },
+                    { officials->GetLinesmanSouth(), 2 }
+                };
+                for (int o = 0; o < 3; ++o) {
+                    PlayerOfficial* off = offs[o].p;
+                    NetworkOfficialState& os = currentState_.officials[o];
+                    if (off) {
+                        Vector3 pos = off->GetPosition();
+                        os.pos[0] = pos.coords[0] / X_FIELD_SCALE;
+                        os.pos[1] = pos.coords[1] / Y_FIELD_SCALE;
+                        os.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
+                        Vector3 d = off->GetDirectionVec();
+                        os.dir[0] = d.coords[0];
+                        os.dir[1] = d.coords[1];
+                        os.dir[2] = d.coords[2];
+                        os.rotY = getHeadingFromDir(os.dir[0], os.dir[1]);
+                        os.anim = dzfoot::ANIM_IDLE;
+                        os.team = 2; // officials team ID
+                        os.role = offs[o].role;
+                        os.flags = 1; // active
+                    } else {
+                        std::memset(&os, 0, sizeof(os));
+                    }
                 }
             }
-            float m0 = 999.0f, m1 = 999.0f;
-            if (t0) m0 = t0->isMirrored() ? -1.0f : 1.0f;
-            if (t1) m1 = t1->isMirrored() ? -1.0f : 1.0f;
+        }
+
+        // Log every 60 ticks (1 second at 60Hz) for debugging
+        if (tickCounter_ % 60 == 0) {
             std::cout << "[GameServer::tick] tick=" << tickCounter_
                       << " mode=" << static_cast<int>(info.game_mode)
                       << " in_play=" << (info.is_in_play ? 1 : 0)
-                      << " rawP0x=" << rawP0x << " rawP11x=" << rawP11x
-                      << " m0=" << m0 << " m1=" << m1
                       << " p0.pos=" << currentState_.players[0].pos[0] << "," << currentState_.players[0].pos[1]
                       << " p11.pos=" << currentState_.players[11].pos[0] << "," << currentState_.players[11].pos[1]
                       << " ball=" << currentState_.ball.pos[0] << "," << currentState_.ball.pos[1]
-                      << " left_team_size=" << info.left_team.size()
-                      << " right_team_size=" << info.right_team.size()
                       << std::endl;
         }
 
@@ -545,6 +621,93 @@ void Server::tick() {
                 ev.score[1] = static_cast<uint8_t>(info.right_goals);
                 eventQueue_.push_back(ev);
                 stats_.red_cards[team]++;
+            }
+        }
+
+        // --- Detect referee events (foul, offside) ---
+        if (match) {
+            Referee* referee = match->GetReferee();
+            if (referee) {
+                // Foul detection: transition from no foul to foul
+                int foulType = referee->GetCurrentFoulType();
+                Player* foulPlayer = referee->GetCurrentFoulPlayer();
+                int foulPlayerIdx = -1;
+                int foulTeam = -1;
+                if (foulPlayer) {
+                    // Find player index in current state
+                    for (int i = 0; i < kMaxPlayers; ++i) {
+                        if (currentState_.players[i].flags == 0) continue;
+                        // Heuristic: match by position proximity (engine may not expose player ID directly)
+                        // Fallback: use last touch team/player when referee signals foul
+                        foulTeam = currentState_.ball_owned_team;
+                        if (foulTeam >= 0 && foulTeam <= 1) {
+                            int base = foulTeam * 11;
+                            for (int j = 0; j < 11; ++j) {
+                                if (currentState_.players[base + j].flags & 1) {
+                                    foulPlayerIdx = j;
+                                    break;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+                if (foulType > 0 && lastRefereeFoulType_ == 0) {
+                    MatchEvent ev{};
+                    ev.eventType = EVENT_FOUL;
+                    ev.team = (foulTeam >= 0) ? static_cast<uint8_t>(foulTeam) : 0;
+                    ev.playerIdx = (foulPlayerIdx >= 0) ? static_cast<uint8_t>(foulPlayerIdx) : 0;
+                    ev.pos[0] = currentState_.ball.pos[0];
+                    ev.pos[1] = currentState_.ball.pos[1];
+                    ev.pos[2] = currentState_.ball.pos[2];
+                    ev.tick = tickCounter_;
+                    ev.score[0] = static_cast<uint8_t>(info.left_goals);
+                    ev.score[1] = static_cast<uint8_t>(info.right_goals);
+                    eventQueue_.push_back(ev);
+                }
+                lastRefereeFoulType_ = foulType;
+
+                // Offside detection: transition from no offside to offside
+                bool isOffside = referee->HasOffsidePlayers();
+                if (isOffside && !wasOffside_ && (tickCounter_ - lastOffsideTick_ > 60)) {
+                    Player* offPlayer = referee->GetFirstOffsidePlayer();
+                    if (offPlayer) {
+                        // Find player index in our state arrays
+                        int offTeam = -1;
+                        int offIdx = 0;
+                        for (int t = 0; t < 2 && offTeam < 0; ++t) {
+                            Team* team = match->GetTeam(t);
+                            if (!team) continue;
+                            std::vector<Player*> players;
+                            team->GetAllPlayers(players);
+                            for (size_t j = 0; j < players.size() && j < 11; ++j) {
+                                if (players[j] == offPlayer) {
+                                    offTeam = t;
+                                    offIdx = static_cast<int>(j);
+                                    break;
+                                }
+                            }
+                        }
+                        if (offTeam < 0) {
+                            // Fallback: use ball-owned team
+                            offTeam = currentState_.ball_owned_team;
+                            if (offTeam < 0 || offTeam > 1) offTeam = 0;
+                        }
+                        MatchEvent ev{};
+                        ev.eventType = EVENT_OFFSIDE;
+                        ev.team = static_cast<uint8_t>(offTeam);
+                        ev.playerIdx = static_cast<uint8_t>(offIdx);
+                        ev.pos[0] = currentState_.ball.pos[0];
+                        ev.pos[1] = currentState_.ball.pos[1];
+                        ev.pos[2] = currentState_.ball.pos[2];
+                        ev.tick = tickCounter_;
+                        ev.score[0] = static_cast<uint8_t>(info.left_goals);
+                        ev.score[1] = static_cast<uint8_t>(info.right_goals);
+                        eventQueue_.push_back(ev);
+                        lastOffsideTick_ = tickCounter_;
+                    }
+                }
+                wasOffside_ = isOffside;
             }
         }
 
@@ -604,15 +767,15 @@ void Server::tick() {
         if (lastGameMode_ != static_cast<uint8_t>(info.game_mode)) {
             EventType et = EVENT_KICK_OFF;
             switch (info.game_mode) {
-                case e_GameMode_KickOff:   et = EVENT_KICK_OFF; break;
-                case e_GameMode_GoalKick:  et = EVENT_GOAL_KICK; break;
-                case e_GameMode_Corner:    et = EVENT_CORNER; break;
-                case e_GameMode_FreeKick:  et = EVENT_FREE_KICK; break;
-                case e_GameMode_ThrowIn:   et = EVENT_THROW_IN; break;
-                case e_GameMode_Penalty:   et = EVENT_PENALTY; break;
+                case e_SetPiece_KickOff:   et = EVENT_KICK_OFF; break;
+                case e_SetPiece_GoalKick:  et = EVENT_GOAL_KICK; break;
+                case e_SetPiece_Corner:    et = EVENT_CORNER; break;
+                case e_SetPiece_FreeKick:  et = EVENT_FREE_KICK; break;
+                case e_SetPiece_ThrowIn:   et = EVENT_THROW_IN; break;
+                case e_SetPiece_Penalty:   et = EVENT_PENALTY; break;
                 default: et = EVENT_KICK_OFF; break;
             }
-            if (info.game_mode != e_GameMode_Normal) {
+            if (info.game_mode != e_SetPiece_None) {
                 MatchEvent ev;
                 ev.eventType = et;
                 ev.team = 0;
@@ -799,6 +962,15 @@ int Server::findPlayerIndex(Team* team, Player* player) const {
     return 255;
 }
 
+int Server::findPlayerIndex(Team* team, int playerID) const {
+    if (!team || playerID < 0) return 255;
+    const std::vector<Player*>& players = team->GetAllPlayers();
+    for (size_t i = 0; i < players.size() && i < 11; ++i) {
+        if (players[i] && players[i]->GetID() == playerID) return static_cast<int>(i);
+    }
+    return 255;
+}
+
 uint8_t Server::deduceAiIntent(Player* player, TeamAIController* controller, int playerIndex, int teamId) {
     if (!player || !controller) return TACTICAL_INTENT_NONE;
     if (player->HasPossession()) return TACTICAL_INTENT_HAS_BALL;
@@ -806,7 +978,7 @@ uint8_t Server::deduceAiIntent(Player* player, TeamAIController* controller, int
     if (controller->GetAttackingRunPlayer() == player) return TACTICAL_INTENT_ATTACKING_RUN;
     if (controller->GetTeamPressurePlayer() == player) return TACTICAL_INTENT_PRESS;
     if (controller->GetForwardSupportPlayer() == player) return TACTICAL_INTENT_SUPPORT;
-    if (player->GetManMarking()) return TACTICAL_INTENT_MARK;
+    if (player->GetManMarkingID() >= 0) return TACTICAL_INTENT_MARK;
     if (player->GetTimeNeededToGetToBall_ms() < 500) return TACTICAL_INTENT_CHASE_BALL;
     return TACTICAL_INTENT_HOLD_FORMATION;
 }
@@ -849,7 +1021,7 @@ void Server::updateTacticalState() {
         tacticalState_.bestPossessionPlayer[t] = static_cast<uint8_t>(findPlayerIndex(team, team->GetBestPossessionPlayer()));
         if (controller) {
             tacticalState_.offsideTrapX[t] = controller->GetOffsideTrapX() / X_FIELD_SCALE;
-            if (controller->GetSetPieceType() != e_GameMode_Normal) {
+            if (controller->GetSetPieceType() != e_SetPiece_None) {
                 tacticalState_.setPieceType = static_cast<uint8_t>(controller->GetSetPieceType());
                 tacticalState_.setPieceTaker = static_cast<uint8_t>(findPlayerIndex(team, controller->GetPieceTaker()));
                 if (tacticalState_.setPieceTaker != 255) tacticalState_.setPieceTeam = static_cast<uint8_t>(t);
@@ -887,9 +1059,10 @@ void Server::updateTacticalState() {
             if (team->MainSelectedPlayer() == p) out.tacticalFlags |= 8;
             if (team->GetDesignatedTeamPossessionPlayer() == p) out.tacticalFlags |= 16;
             if (team->GetBestPossessionPlayer() == p) out.tacticalFlags |= 32;
-            if (p->GetManMarking()) {
+            int markID = p->GetManMarkingID();
+            if (markID >= 0) {
                 out.targetTeam = static_cast<uint8_t>(1 - t);
-                out.targetPlayer = static_cast<uint8_t>(findPlayerIndex(match->GetTeam(1 - t), p->GetManMarking()));
+                out.targetPlayer = static_cast<uint8_t>(findPlayerIndex(match->GetTeam(1 - t), markID));
             }
         }
     }
@@ -1019,8 +1192,8 @@ void Server::applyPendingInputs() {
         if (inp.buttons & dzfoot::BUTTON_SLIDING)    gameEnv_->action(game_sliding, left_team, player);
         else                                          gameEnv_->action(game_release_sliding, left_team, player);
 
-        if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    gameEnv_->action(game_dribble, left_team, player);
-        else                                          gameEnv_->action(game_release_dribble, left_team, player);
+        if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    gameEnv_->action(game_dribbling, left_team, player);
+        else                                          gameEnv_->action(game_release_dribbling, left_team, player);
 
         if (inp.buttons & dzfoot::BUTTON_SPRINT)     gameEnv_->action(game_sprint, left_team, player);
         else                                          gameEnv_->action(game_release_sprint, left_team, player);
@@ -1168,32 +1341,32 @@ void Server::postMatchResult(const std::string& statsUrl) {
 }
 
 // ------------------------------------------------------------------
-// Map JSON skill name string → GF PlayerStat enum value
+// Map JSON skill name string → GF stat name (empty = unknown)
 // ------------------------------------------------------------------
-PlayerStat skillNameToEnum(const std::string& name) {
-    if (name == "physical_balance")            return physical_balance;
-    if (name == "physical_reaction")           return physical_reaction;
-    if (name == "physical_acceleration")       return physical_acceleration;
-    if (name == "physical_velocity")           return physical_velocity;
-    if (name == "physical_stamina")            return physical_stamina;
-    if (name == "physical_agility")            return physical_agility;
-    if (name == "physical_shotpower")          return physical_shotpower;
-    if (name == "technical_standingtackle")    return technical_standingtackle;
-    if (name == "technical_slidingtackle")     return technical_slidingtackle;
-    if (name == "technical_ballcontrol")       return technical_ballcontrol;
-    if (name == "technical_dribble")           return technical_dribble;
-    if (name == "technical_shortpass")         return technical_shortpass;
-    if (name == "technical_highpass")          return technical_highpass;
-    if (name == "technical_header")            return technical_header;
-    if (name == "technical_shot")            return technical_shot;
-    if (name == "technical_volley")            return technical_volley;
-    if (name == "mental_calmness")             return mental_calmness;
-    if (name == "mental_workrate")             return mental_workrate;
-    if (name == "mental_resilience")           return mental_resilience;
-    if (name == "mental_defensivepositioning") return mental_defensivepositioning;
-    if (name == "mental_offensivepositioning") return mental_offensivepositioning;
-    if (name == "mental_vision")               return mental_vision;
-    return player_stat_max; // sentinel / unknown
+std::string skillNameToEnum(const std::string& name) {
+    if (name == "physical_balance")            return "physical_balance";
+    if (name == "physical_reaction")           return "physical_reaction";
+    if (name == "physical_acceleration")       return "physical_acceleration";
+    if (name == "physical_velocity")           return "physical_velocity";
+    if (name == "physical_stamina")            return "physical_stamina";
+    if (name == "physical_agility")            return "physical_agility";
+    if (name == "physical_shotpower")          return "physical_shotpower";
+    if (name == "technical_standingtackle")    return "technical_standingtackle";
+    if (name == "technical_slidingtackle")     return "technical_slidingtackle";
+    if (name == "technical_ballcontrol")       return "technical_ballcontrol";
+    if (name == "technical_dribble")           return "technical_dribble";
+    if (name == "technical_shortpass")         return "technical_shortpass";
+    if (name == "technical_highpass")          return "technical_highpass";
+    if (name == "technical_header")            return "technical_header";
+    if (name == "technical_shot")              return "technical_shot";
+    if (name == "technical_volley")            return "technical_volley";
+    if (name == "mental_calmness")             return "mental_calmness";
+    if (name == "mental_workrate")             return "mental_workrate";
+    if (name == "mental_resilience")           return "mental_resilience";
+    if (name == "mental_defensivepositioning") return "mental_defensivepositioning";
+    if (name == "mental_offensivepositioning") return "mental_offensivepositioning";
+    if (name == "mental_vision")               return "mental_vision";
+    return ""; // sentinel / unknown
 }
 
 } // namespace GameServer

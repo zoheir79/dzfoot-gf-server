@@ -24,12 +24,19 @@ class PlayerData {
     int GetDatabaseID() const { return databaseID; }
     const std::vector<e_PlayerRole> &GetRoles() const;
 
-    float GetStat(const char *name);
+    float GetStat(const char *name) const;
+    void SetStat(const std::string& name, float value);
 
-    int GetSkinColor() { return skinColor; }
-    std::string GetHairStyle() { return hairStyle; }
-    std::string GetHairColor() { return hairColor; }
-    float GetHeight() { return height; }
+    int GetSkinColor() const { return skinColor; }
+    std::string GetHairStyle() const { return hairStyle; }
+    std::string GetHairColor() const { return hairColor; }
+    float GetHeight() const { return height; }
+
+    void SetSkinColor(int val) { skinColor = val; }
+    void SetHairStyle(const std::string& val) { hairStyle = val; }
+    void SetHairColor(const std::string& val) { hairColor = val; }
+    void SetHeight(float val) { height = val; }
+    void SetLastName(const std::string& val) { lastName = val; }
 
   protected:
     int databaseID;

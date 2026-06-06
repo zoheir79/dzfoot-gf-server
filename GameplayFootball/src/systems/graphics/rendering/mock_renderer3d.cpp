@@ -2,6 +2,10 @@
 
 #include "mock_renderer3d.hpp"
 #include "base/log.hpp"
+#include <cassert>
+#include <vector>
+#include <deque>
+#include <list>
 
 namespace blunted {
 
@@ -64,7 +68,7 @@ namespace blunted {
   Matrix4 MockRenderer3D::CreatePerspectiveMatrix(float aspectRatio, float nearCap, float farCap) { return Matrix4(); }
   Matrix4 MockRenderer3D::CreateOrthoMatrix(float left, float right, float bottom, float top, float nearCap, float farCap) { return Matrix4(); }
 
-  VertexBufferID MockRenderer3D::CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) { return 0; }
+  VertexBufferID MockRenderer3D::CreateVertexBuffer(float *vertices, unsigned int verticesDataSize, std::vector<unsigned int> indices, e_VertexBufferUsage usage) { return VertexBufferID(); }
   void MockRenderer3D::UpdateVertexBuffer(VertexBufferID vertexBufferID, float *vertices, unsigned int verticesDataSize) {}
   void MockRenderer3D::DeleteVertexBuffer(VertexBufferID vertexBufferID) {}
   void MockRenderer3D::RenderVertexBuffer(const std::deque<VertexBufferQueueEntry> &vertexBufferQueue, e_RenderMode renderMode) {}

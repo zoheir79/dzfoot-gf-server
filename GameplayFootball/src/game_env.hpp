@@ -10,20 +10,17 @@
 #include <vector>
 #include <string>
 
-namespace blunted {
-  class Match;
-  class GameTask;
-  class MenuTask;
-}
+// Coordinate scaling: GF internal units -> env/network units
+// Normalizes X (length) in [-1.0, +1.0] range, and Y (width) in [-0.43, +0.43] range
+constexpr float X_FIELD_SCALE = 55.0f;
+constexpr float Y_FIELD_SCALE = 83.6f;
+constexpr float Z_FIELD_SCALE = 1.0f;
 
 // Forward declarations
 class DZFootEnv;
-
-struct FormationEntry {
-  float x = 0.0f;
-  float y = 0.0f;
-  bool controllable = false;
-};
+class Match;
+class GameTask;
+class MenuTask;
 
 struct ScenarioConfig {
   int left_agents = 1;
@@ -59,14 +56,20 @@ struct PlayerInfo {
 
 struct SharedInfo {
   Position ball_position;
+  Position ball_velocity;      // DZFootMatchState.ballVel (env coords per tick)
   bool is_in_play = false;
+  int game_mode = 0;           // e_SetPiece equivalent
+  int ball_owned_team = -1;
+  int ball_owned_player = -1;
+  int left_goals = 0;
+  int right_goals = 0;
   std::vector<PlayerInfo> left_team;
   std::vector<PlayerInfo> right_team;
 };
 
 struct GameContext {
-  blunted::GameTask* gameTask = nullptr;
-  blunted::MenuTask* menuTask = nullptr;
+  GameTask* gameTask = nullptr;
+  MenuTask* menuTask = nullptr;
 };
 
 class GameEnv {
@@ -78,6 +81,10 @@ class GameEnv {
   void step();
   SharedInfo get_info();
   void action(int action, bool left_team, int player);
+
+  // Apply custom formations from scenario_config to the live match.
+  // Must be called after start_game() (Match exists) and before the loop.
+  void apply_formations();
 
   ScenarioConfig scenario_config;
   GameContext* context = nullptr;

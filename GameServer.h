@@ -128,6 +128,7 @@ private:
     uint8_t deduceAnimId(int playerIndex, int teamId);
     uint8_t deduceAiIntent(::Player* player, ::TeamAIController* controller, int playerIndex, int teamId);
     int findPlayerIndex(::Team* team, ::Player* player) const;
+    int findPlayerIndex(::Team* team, int playerID) const;
 
     // Helpers
     float getHeadingFromDir(float dx, float dz) const;
@@ -160,6 +161,18 @@ private:
     int     pendingShotExpiryTick_[kMaxPlayers] = {}; // 0 = no pending shot
     int     pendingPassExpiryTick_[kMaxPlayers] = {}; // 0 = no pending pass
     int     pendingPassPlayerIdx_[kMaxPlayers] = {};  // who started the pass
+
+    // Referee event tracking
+    int     lastRefereeFoulType_ = 0;   // 0=none, 1=foul, 2=yellow, 3=red
+    int     lastRefereeFoulPlayer_ = -1;
+    bool    wasOffside_ = false;
+    int     lastOffsideTick_ = 0;
+
+    // Jersey numbers from match config JSON (index = team*11 + player)
+    uint8_t playerNumbers_[DZ_MAX_PLAYERS] = {};
+    uint8_t bodyTypes_[DZ_MAX_PLAYERS] = {};
+    uint8_t beardStyles_[DZ_MAX_PLAYERS] = {};
+    uint8_t eyeColors_[DZ_MAX_PLAYERS] = {};
 };
 
 } // namespace GameServer

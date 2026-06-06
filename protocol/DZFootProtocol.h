@@ -91,6 +91,17 @@ struct NetworkPlayerState {
 };
 static_assert(sizeof(NetworkPlayerState) == 48, "NetworkPlayerState size mismatch");
 
+struct NetworkOfficialState {
+    float  pos[3];   // 12
+    float  dir[3];   // 12
+    float  rotY;     // 4
+    uint8_t anim;     // 1
+    uint8_t team;     // 2 = referee team
+    uint8_t role;     // 0=referee, 1=linesmanN, 2=linesmanS
+    uint8_t flags;    // 1
+};
+static_assert(sizeof(NetworkOfficialState) == 32, "NetworkOfficialState size mismatch");
+
 // ------------------------------------------------------------------
 // GameState packet (topic "gs", unreliable)
 // ------------------------------------------------------------------
@@ -104,9 +115,10 @@ struct GameStatePacket {
     float    timer;
     NetworkBallState ball;
     NetworkPlayerState players[DZ_MAX_PLAYERS];
+    NetworkOfficialState officials[3]; // referee + 2 linesmen
 };
-static_assert(sizeof(GameStatePacket) == 12 + 4 + 8 + 1 + 1 + 2 + 4 + 40 + (48 * 22), "GameStatePacket size sanity check");
-static_assert(sizeof(GameStatePacket) < 1200, "GameStatePacket must fit in a single datagram");
+static_assert(sizeof(GameStatePacket) == 12 + 4 + 8 + 1 + 1 + 2 + 4 + 40 + (48 * 22) + (32 * 3), "GameStatePacket size sanity check");
+static_assert(sizeof(GameStatePacket) < 1300, "GameStatePacket must fit in a single datagram");
 
 // ------------------------------------------------------------------
 // MatchEvent packet (topic "ev", reliable)
@@ -201,23 +213,32 @@ struct PlayerStaticInfo {
     uint8_t  role;               // e_PlayerRole
     char     lastName[kMaxNameLen];
     float    height;             // meters
-    int32_t  skinColor;          // 0..N
-    char     hairStyle[kMaxHairLen];
-    char     hairColor[kMaxHairLen];
+    uint8_t  skinColor;          // 0..6 (7 tones)
+    uint8_t  hairStyle;          // 0..5 (short, long, mohawk, curly, ponytail, bald)
+    uint8_t  hairColor;          // 0..7 (black, dark_brown, brown, light_brown, blonde, red, grey, white)
     float    stats[kNumPlayerStats]; // physical/technical/mental
+    uint8_t  playerNumber;       // jersey number (1..99)
+    uint8_t  bodyType;           // 0=thin, 1=average, 2=muscular, 3=heavy
+    uint8_t  beardStyle;         // 0=none, 1=stubble, 2=short, 3=full
+    uint8_t  eyeColor;           // 0=brown, 1=blue, 2=green, 3=hazel, 4=grey
 };
-static_assert(sizeof(PlayerStaticInfo) == 3 + kMaxNameLen + 4 + 4 + kMaxHairLen * 2 + (4 * kNumPlayerStats), "PlayerStaticInfo size check");
+static_assert(sizeof(PlayerStaticInfo) == 3 + kMaxNameLen + 4 + 1 + 1 + 1 + (4 * kNumPlayerStats) + 1 + 3, "PlayerStaticInfo size check");
 
 struct MatchSetupPacket {
     PacketHeader header;
     uint8_t  playerCount;        // usually 22
     char     teamAName[kMaxNameLen];
     char     teamBName[kMaxNameLen];
+    uint8_t  teamAColor1[3];     // RGB primary
+    uint8_t  teamAColor2[3];     // RGB secondary
+    uint8_t  teamBColor1[3];     // RGB primary
+    uint8_t  teamBColor2[3];     // RGB secondary
     uint8_t  stadiumId;
     uint8_t  durationMinutes;
+    uint8_t  _pad[2];
     PlayerStaticInfo players[DZ_MAX_PLAYERS];
 };
-static_assert(sizeof(MatchSetupPacket) == 12 + 1 + kMaxNameLen * 2 + 1 + 1 + (sizeof(PlayerStaticInfo) * DZ_MAX_PLAYERS), "MatchSetupPacket size check");
+static_assert(sizeof(MatchSetupPacket) == 12 + 1 + kMaxNameLen * 2 + 12 + 1 + 1 + 2 + (sizeof(PlayerStaticInfo) * DZ_MAX_PLAYERS), "MatchSetupPacket size check");
 
 struct TacticalPlayerState {
     float formationTarget[3];

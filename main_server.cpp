@@ -88,27 +88,22 @@ Args parseArgs(int argc, char* argv[]) {
     return cfg;
 }
 
-static GameServer::PlayerInput parseInputPacket(const uint8_t* data, size_t len) {
-    GameServer::PlayerInput inp{};
-    if (len < 48) return inp;
-    float vals[10];
-    std::memcpy(vals, data, 40);
-    inp.dirX = vals[0];
-    inp.dirZ = vals[1];
-    inp.buttons = 0;
-    if (vals[2] > 0.5f) inp.buttons |= dzfoot::BUTTON_KICK;
-    if (vals[3] > 0.5f) inp.buttons |= dzfoot::BUTTON_PASS;
-    if (vals[4] > 0.5f) inp.buttons |= dzfoot::BUTTON_HIGH_PASS;
-    if (vals[5] > 0.5f) inp.buttons |= dzfoot::BUTTON_SHOT;
-    if (vals[6] > 0.5f) inp.buttons |= dzfoot::BUTTON_SLIDING;
-    if (vals[7] > 0.5f) inp.buttons |= dzfoot::BUTTON_DRIBBLE;
-    if (vals[8] > 0.5f) inp.buttons |= dzfoot::BUTTON_SPRINT;
-    if (vals[9] > 0.5f) inp.buttons |= dzfoot::BUTTON_SWITCH_PLAYER;
-    inp.playerIdx = data[40];
-    inp.team = data[41];
-    std::memcpy(&inp.clientTick, data + 44, 4);
-    if (len >= 56) {
-        std::memcpy(&inp.clientTimeUs, data + 48, 8);
+static GameServer::PlayerInputPacket parseInputPacket(const uint8_t* data, size_t len) {
+    GameServer::PlayerInputPacket inp{};
+    if (len < sizeof(dzfoot::PlayerInputPacket)) {
+        std::cerr << "[GameServer] Input packet too short: " << len
+                  << " bytes (expected " << sizeof(dzfoot::PlayerInputPacket) << ")" << std::endl;
+        return inp;
+    }
+    std::memcpy(&inp, data, sizeof(dzfoot::PlayerInputPacket));
+    // Validate header (ignore if malformed, input will be zeroed)
+    if (inp.header.magic != dzfoot::DZ_MAGIC ||
+        inp.header.version != dzfoot::DZ_PROTOCOL_VERSION ||
+        inp.header.type != dzfoot::PACKET_PLAYER_INPUT) {
+        std::cerr << "[GameServer] Invalid input packet header (magic=" << inp.header.magic
+                  << " ver=" << inp.header.version << " type=" << inp.header.type << ")" << std::endl;
+        std::memset(&inp, 0, sizeof(inp));
+        return inp;
     }
     return inp;
 }

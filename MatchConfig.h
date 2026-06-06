@@ -14,6 +14,15 @@ struct PlayerSkillProfile {
     std::string position;  // "GK", "CB", "LW", etc.
     int number = 0;
     std::map<std::string, float> skills;  // key: "physical_velocity", value: 0.85
+
+    // Custom deterministic avatar fields populated by backend
+    int skinColor = 3;
+    std::string hairStyle = "short";
+    std::string hairColor = "black";
+    float height = 1.78f;
+    int bodyType = 1;
+    int beardStyle = 0;
+    int eyeColor = 0;
 };
 
 struct TeamFormationEntry {

@@ -27,7 +27,7 @@ class Team {
     boost::intrusive_ptr<Node> GetSceneNode() { return teamNode; }
 
     int GetID() const { return id; }
-    signed int GetSide();
+    signed int GetSide() const;
     bool isMirrored() const { return false; }  // DZFoot: vi3itor has no artificial mirroring
     signed int GetDynamicSide() const { return GetSide(); }  // DZFoot: no dynamic mirroring
     TeamData *GetTeamData() { return teamData; }

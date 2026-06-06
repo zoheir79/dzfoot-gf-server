@@ -64,6 +64,13 @@ bool MatchConfig::loadString(const std::string& jsonStr, MatchConfig& out) {
                     ps.name = pj.value("name", "Player");
                     ps.position = pj.value("position", "CM");
                     ps.number = pj.value("number", 0);
+                    ps.skinColor = pj.value("skin_color", 3);
+                    ps.hairStyle = pj.value("hair_style", "short");
+                    ps.hairColor = pj.value("hair_color", "black");
+                    ps.height = pj.value("height", 1.78f);
+                    ps.bodyType = pj.value("body_type", 1);
+                    ps.beardStyle = pj.value("beard_style", 0);
+                    ps.eyeColor = pj.value("eye_color", 0);
                     if (pj.contains("skills") && pj["skills"].is_object()) {
                         for (auto& [k, v] : pj["skills"].items()) {
                             ps.skills[k] = v.get<float>();

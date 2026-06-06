@@ -6,17 +6,19 @@
 
 #include "../gamedefines.hpp"
 
+#include <SDL2/SDL_ttf.h>
+
 #include <vector>
 #include <string>
 
-namespace blunted {
-  class IHIDevice;
-  class Match;
-  class GameTask;
-  class Team;
-  class Player;
-  class Ball;
-}
+namespace blunted { class Properties; }
+
+class IHIDevice;
+class Match;
+class GameTask;
+class Team;
+class Player;
+class Ball;
 
 // Simplified state struct for DZFoot server extraction
 struct DZFootMatchState {
@@ -27,6 +29,9 @@ struct DZFootMatchState {
   bool goalScored;
   int score[2];
   unsigned long matchTime_ms;
+  int game_mode;        // e_SetPiece equivalent
+  int ball_owned_team;
+  int ball_owned_player;
 };
 
 struct DZFootPlayerState {
@@ -66,8 +71,8 @@ class DZFootEnv {
   std::vector<DZFootPlayerState> GetPlayerStates();
 
   // Direct access to match / game task (for advanced state extraction)
-  blunted::Match* GetMatch();
-  blunted::GameTask* GetGameTask();
+  Match* GetMatch();
+  GameTask* GetGameTask();
 
   // Check if match is running
   bool IsMatchRunning() const;
@@ -76,7 +81,7 @@ class DZFootEnv {
   void Shutdown();
 
  private:
-  void DoInitialize();
+  void DoInitialize(blunted::Properties *config);
   void CreateControllers();
 
   bool initialized_ = false;
@@ -84,7 +89,11 @@ class DZFootEnv {
   int step_ = 0;
 
   // Controllers: 2 teams x 11 players = 22 remote controllers
-  std::vector<blunted::IHIDevice*> controllers_;
+  std::vector<IHIDevice*> controllers_;
+
+  // Font handles (closed in Shutdown after MenuTask is destroyed)
+  TTF_Font* defaultFont_ = nullptr;
+  TTF_Font* defaultOutlineFont_ = nullptr;
 };
 
 #endif
