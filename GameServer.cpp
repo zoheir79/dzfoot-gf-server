@@ -639,7 +639,7 @@ void Server::tick() {
                         if (currentState_.players[i].flags == 0) continue;
                         // Heuristic: match by position proximity (engine may not expose player ID directly)
                         // Fallback: use last touch team/player when referee signals foul
-                        foulTeam = currentState_.ball_owned_team;
+                        foulTeam = currentState_.ball.ownedTeam;
                         if (foulTeam >= 0 && foulTeam <= 1) {
                             int base = foulTeam * 11;
                             for (int j = 0; j < 11; ++j) {
@@ -690,7 +690,7 @@ void Server::tick() {
                         }
                         if (offTeam < 0) {
                             // Fallback: use ball-owned team
-                            offTeam = currentState_.ball_owned_team;
+                            offTeam = currentState_.ball.ownedTeam;
                             if (offTeam < 0 || offTeam > 1) offTeam = 0;
                         }
                         MatchEvent ev{};
