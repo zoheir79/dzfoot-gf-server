@@ -22,8 +22,11 @@ RUN mkdir build && cd build && \
       -DEGL_INCLUDE_DIR=/usr/include/EGL \
       -DEGL_LIBRARY=/usr/lib/x86_64-linux-gnu/libEGL.so
 RUN cd build && \
-    (make -j1 2>&1 | tee /tmp/build.log && cp /tmp/build.log /build/build.log) || \
-    (cat /tmp/build.log && cp /tmp/build.log /build/build.log && exit 1)
+    set -o pipefail && \
+    make -j1 2>&1 | tee /tmp/build.log && \
+    cp /tmp/build.log /build/build.log && \
+    ls -la gf_server && \
+    file gf_server
 
 # Runtime stage
 FROM ubuntu:22.04
