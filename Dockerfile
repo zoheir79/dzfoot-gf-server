@@ -21,12 +21,7 @@ RUN mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
       -DEGL_INCLUDE_DIR=/usr/include/EGL \
       -DEGL_LIBRARY=/usr/lib/x86_64-linux-gnu/libEGL.so
-RUN cd build && \
-    set -o pipefail && \
-    make -j1 2>&1 | tee /tmp/build.log && \
-    cp /tmp/build.log /build/build.log && \
-    ls -la gf_server && \
-    file gf_server
+RUN bash -c 'set -o pipefail; cd build && make -j1 2>&1 | tee /tmp/build.log; exit_code=${PIPESTATUS[0]}; cp /tmp/build.log /build/build.log; if [ $exit_code -ne 0 ]; then cat /tmp/build.log; exit $exit_code; fi; ls -la gf_server; file gf_server'
 
 # Runtime stage
 FROM ubuntu:22.04
