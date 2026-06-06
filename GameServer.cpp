@@ -26,6 +26,7 @@
 #include "onthepitch/player/humanoid/humanoid.hpp"
 #include "onthepitch/referee.hpp"
 #include "onthepitch/officials.hpp"
+#include "onthepitch/player/playerofficial.hpp"
 #include "data/playerdata.hpp"
 #include "data/teamdata.hpp"
 #include "utils.hpp"
