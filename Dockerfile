@@ -21,7 +21,7 @@ RUN mkdir build && cd build && \
     cmake .. -DCMAKE_BUILD_TYPE=Release \
       -DEGL_INCLUDE_DIR=/usr/include/EGL \
       -DEGL_LIBRARY=/usr/lib/x86_64-linux-gnu/libEGL.so
-RUN bash -c 'set -o pipefail; cd build && make -j1 2>&1 | tee /tmp/build.log; exit_code=${PIPESTATUS[0]}; cp /tmp/build.log /build/build.log; if [ $exit_code -ne 0 ]; then cat /tmp/build.log; exit $exit_code; fi; ls -la gf_server; file gf_server'
+RUN bash -c 'set -o pipefail; cd build && make -j1 2>&1 | tee /tmp/build.log; exit_code=${PIPESTATUS[0]}; cp /tmp/build.log /build/build.log; if [ $exit_code -ne 0 ]; then cat /tmp/build.log; exit $exit_code; fi; ls -la gf_server'
 
 # Runtime stage
 FROM ubuntu:22.04
@@ -42,8 +42,10 @@ COPY --from=builder /build/build/GF_build/libgame.so /usr/local/lib/
 COPY --from=builder /build/GameplayFootball/data /app/data
 RUN ldconfig
 
-# GF server communicates via Redis only.
-# Game states are published to Redis, backend session service forwards to LiveKit.
+# GF server communicates via Redis by default.
+# Game states are published to Redis; backend session service forwards to LiveKit.
 # Player inputs are received via Redis subscription.
+# Optional: build with -DUSE_LIVEKIT=ON to publish directly to LiveKit (requires libdatachannel).
+#   When enabled, pass --livekit-url=... and --livekit-token=... to gf_server.
 
 ENTRYPOINT ["gf_server"]

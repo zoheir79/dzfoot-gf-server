@@ -41,6 +41,7 @@ struct TeamConfig {
 struct MatchConfig {
     int duration_seconds = 600;
     std::string mode = "vs_ai";  // "1v1" or "vs_ai"
+    std::string stadium_id;        // e.g. "stade-5-juillet"
     TeamConfig left_team;
     TeamConfig right_team;
 

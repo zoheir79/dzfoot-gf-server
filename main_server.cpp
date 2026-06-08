@@ -29,6 +29,8 @@ struct Args {
     int broadcastRateHz = 20;
     std::string statsUrl;
     std::string redisUrl;
+    std::string livekitUrl;
+    std::string livekitToken;
     uint8_t gameMode = 1;
     std::string configFile;
     std::string configJson;
@@ -57,6 +59,8 @@ Args parseArgs(int argc, char* argv[]) {
     } catch (...) { cfg.gameMode = 1; }
     cfg.statsUrl       = getenvOr("STATS_URL", "");
     cfg.redisUrl       = getenvOr("REDIS_URL", "");
+    cfg.livekitUrl     = getenvOr("LIVEKIT_URL", "");
+    cfg.livekitToken   = getenvOr("LIVEKIT_TOKEN", "");
     cfg.configFile     = getenvOr("CONFIG_FILE", "");
     cfg.configJson     = getenvOr("CONFIG_JSON", "");
 
@@ -76,6 +80,8 @@ Args parseArgs(int argc, char* argv[]) {
         }
         else if (arg.find("--stats-url=") == 0) cfg.statsUrl = arg.substr(12);
         else if (arg.find("--redis-url=") == 0) cfg.redisUrl = arg.substr(12);
+        else if (arg.find("--livekit-url=") == 0) cfg.livekitUrl = arg.substr(14);
+        else if (arg.find("--livekit-token=") == 0) cfg.livekitToken = arg.substr(16);
         else if (arg.find("--mode=") == 0) {
             std::string m = arg.substr(7);
             if (m == "1v1" || m == "1") cfg.gameMode = 0;
@@ -114,7 +120,7 @@ int main(int argc, char* argv[]) {
 
     Args args = parseArgs(argc, argv);
     if (args.roomId.empty()) {
-        std::cerr << "Usage: gf_server --room-id=ID [--mode=1v1|vs_ai|ai_vs_ai] [--redis-url=...] [--broadcast-hz=20]" << std::endl;
+        std::cerr << "Usage: gf_server --room-id=ID [--mode=1v1|vs_ai|ai_vs_ai] [--redis-url=...] [--livekit-url=...] [--livekit-token=...] [--broadcast-hz=20]" << std::endl;
         return 1;
     }
 
@@ -140,6 +146,8 @@ int main(int argc, char* argv[]) {
     gscfg.broadcastRateHz = args.broadcastRateHz;
     gscfg.statsUrl = args.statsUrl;
     gscfg.redisUrl = args.redisUrl;
+    gscfg.livekitUrl = args.livekitUrl;
+    gscfg.livekitToken = args.livekitToken;
     gscfg.redis = &redis;
     gscfg.gameMode = args.gameMode;
     gscfg.shutdownFlag = &gRunning;

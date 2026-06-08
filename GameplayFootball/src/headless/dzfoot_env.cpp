@@ -45,6 +45,7 @@ extern std::vector<IHIDevice*> controllers;
 #include <cstring>
 #include <chrono>
 #include <iostream>
+#include <cstdlib>
 
 using namespace blunted;
 
@@ -70,7 +71,17 @@ void DZFootEnv::Initialize(int resX, int resY) {
   DoInitialize(config);
 
   // Font loading (required by MenuTask even if not rendering)
-  std::string fontfilename = config->Get("font_filename", "media/fonts/alegreya/AlegreyaSansSC-ExtraBold.ttf");
+  std::string fontfilename;
+  const char* fontEnv = std::getenv("GFOOTBALL_FONT");
+  if (fontEnv) {
+    fontfilename = fontEnv;
+  } else {
+    fontfilename = config->Get("font_filename", "media/fonts/alegreya/AlegreyaSansSC-ExtraBold.ttf");
+    const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
+    if (dataDir && !fontfilename.empty() && fontfilename[0] != '/') {
+      fontfilename = std::string(dataDir) + "/" + fontfilename;
+    }
+  }
   defaultFont_ = TTF_OpenFont(fontfilename.c_str(), 32);
   if (!defaultFont_) {
     Log(e_FatalError, "dzfoot", "Initialize", "Could not load font " + fontfilename);
@@ -114,9 +125,14 @@ void DZFootEnv::DoInitialize(Properties *config) {
 
   // Database (needed for team/player data)
   db = new Database();
-  bool dbSuccess = db->Load("databases/default/database.sqlite");
+  std::string dbPath = "databases/default/database.sqlite";
+  const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
+  if (dataDir) {
+    dbPath = std::string(dataDir) + "/" + dbPath;
+  }
+  bool dbSuccess = db->Load(dbPath);
   if (!dbSuccess) {
-    Log(e_FatalError, "dzfoot", "DoInitialize", "Could not open database");
+    Log(e_FatalError, "dzfoot", "DoInitialize", "Could not open database: " + dbPath);
   }
 }
 

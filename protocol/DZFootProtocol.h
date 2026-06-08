@@ -203,7 +203,7 @@ constexpr uint16_t BUTTON_SWITCH_PLAYER = 1 << 7;
 // ------------------------------------------------------------------
 // MatchSetup packet (sent once at startup, topic "ev" reliable)
 // ------------------------------------------------------------------
-constexpr uint8_t kNumPlayerStats = 21;
+constexpr uint8_t kNumPlayerStats = 22;
 constexpr uint8_t kMaxNameLen     = 32;
 constexpr uint8_t kMaxHairLen     = 16;
 

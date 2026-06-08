@@ -29,6 +29,15 @@ set(GF_SERVER_SRCS
 
 add_executable(gf_server ${GF_SERVER_SRCS})
 
+# Optional: build with direct LiveKit data-channel support (requires libdatachannel)
+option(USE_LIVEKIT "Enable direct LiveKit publishing from gf_server" OFF)
+if(USE_LIVEKIT)
+    find_package(LibDataChannel REQUIRED)
+    target_sources(gf_server PRIVATE LiveKitBridge_libdatachannel.cpp)
+    target_link_libraries(gf_server PRIVATE LibDataChannel::LibDataChannel)
+    target_compile_definitions(gf_server PRIVATE USE_LIVEKIT)
+endif()
+
 target_include_directories(gf_server PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/GameplayFootball/src

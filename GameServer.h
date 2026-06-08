@@ -63,6 +63,8 @@ struct Config {
     int duration = 600; // seconds
     std::string statsUrl;
     std::string redisUrl;
+    std::string livekitUrl;
+    std::string livekitToken;
     RedisClient* redis = nullptr; // for publishing game states + subscribing inputs
     int broadcastRateHz = 20; // GameState broadcast rate (simulation stays at 60 Hz)
     uint8_t gameMode = 1; // 0=1v1 (both human), 1=vs AI (A human, B AI)
@@ -154,6 +156,7 @@ private:
     bool matchSetupSent_ = false;
     bool halfTimeSent_ = false;
     uint8_t lastGameMode_ = 255;
+    std::string stadiumId_;  // from match config JSON
 
     // Per-player tracking for stat detection (shots/passes/tackles).
     // Index = teamId * 11 + playerIndex (matches GameState::players layout).
@@ -167,6 +170,14 @@ private:
     int     lastRefereeFoulPlayer_ = -1;
     bool    wasOffside_ = false;
     int     lastOffsideTick_ = 0;
+
+    // Goal celebration: force ANIM_CELEBRATE on scorer for ~3 seconds
+    int     celebrationExpiryTick_[kMaxPlayers] = {};
+
+#ifdef USE_LIVEKIT
+    class LiveKitBridge;
+    LiveKitBridge* livekitBridge_ = nullptr;
+#endif
 
     // Jersey numbers from match config JSON (index = team*11 + player)
     uint8_t playerNumbers_[DZ_MAX_PLAYERS] = {};

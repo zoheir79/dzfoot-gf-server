@@ -33,6 +33,7 @@
 #include "utils/orbitcamera.hpp"
 
 #include "SDL2/SDL_ttf.h"
+#include <cstdlib>
 
 #if defined(WIN32) && defined(__MINGW32__)
 #undef main
@@ -289,8 +290,13 @@ int main(int argc, const char** argv) {
   // database
 
   db = new Database();
-  bool dbSuccess = db->Load("databases/default/database.sqlite");
-  if (!dbSuccess) Log(e_FatalError, "main", "()", "Could not open database");
+  std::string dbPath = "databases/default/database.sqlite";
+  const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
+  if (dataDir) {
+    dbPath = std::string(dataDir) + "/" + dbPath;
+  }
+  bool dbSuccess = db->Load(dbPath);
+  if (!dbSuccess) Log(e_FatalError, "main", "()", "Could not open database: " + dbPath);
 
 
   // initialize systems

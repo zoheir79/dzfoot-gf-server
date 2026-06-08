@@ -2,6 +2,9 @@
 #include "RedisClient.h"
 #include "StatsPoster.h"
 #include "MatchConfig.h"
+#ifdef USE_LIVEKIT
+#include "LiveKitBridge.h"
+#endif
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -9,6 +12,7 @@
 #include <cmath>
 #include <cctype>
 #include <cstdlib>
+#include <unistd.h>
 #include <algorithm>
 
 #include "game_env.hpp"
@@ -96,10 +100,24 @@ Server::Server(const Config& cfg) : cfg_(cfg) {
 }
 
 // Defined here (not in header) so unique_ptr<RedisClient> can see complete type.
-Server::~Server() = default;
+Server::~Server() {
+#ifdef USE_LIVEKIT
+    if (livekitBridge_) {
+        livekitBridge_->disconnect();
+        delete livekitBridge_;
+        livekitBridge_ = nullptr;
+    }
+#endif
+}
 
 void Server::sendMatchSetup() {
-    if (!gameEnv_ || !cfg_.redis || !cfg_.redis->isConfigured()) return;
+    bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
+#ifdef USE_LIVEKIT
+    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
+#else
+    bool hasLiveKit = false;
+#endif
+    if (!gameEnv_ || (!hasRedis && !hasLiveKit)) return;
 
     MatchSetupPacket setup{};
     setup.header.magic = dzfoot::DZ_MAGIC;
@@ -110,7 +128,11 @@ void Server::sendMatchSetup() {
     copyString(setup.teamAName, sizeof(setup.teamAName), cfg_.teamA);
     copyString(setup.teamBName, sizeof(setup.teamBName), cfg_.teamB);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
-    setup.stadiumId = 0;
+    {
+        uint8_t hash = 0;
+        for (char c : stadiumId_) hash = hash * 31 + static_cast<uint8_t>(c);
+        setup.stadiumId = hash;
+    }
 
     Match* match = gameEnv_->context->gameTask->GetMatch();
     if (!match) {
@@ -181,7 +203,7 @@ void Server::sendMatchSetup() {
                     else if (hc == "white")   ps.hairColor = 7;
                     else                      ps.hairColor = 0; // black (default)
                 }
-                // Extract all 21 stats (order must match skillNameToEnum)
+                // Extract all 22 stats (order must match skillNameToEnum)
                 static const char* statNames[kNumPlayerStats] = {
                     "physical_balance", "physical_reaction", "physical_acceleration",
                     "physical_velocity", "physical_stamina", "physical_agility",
@@ -189,7 +211,8 @@ void Server::sendMatchSetup() {
                     "technical_ballcontrol", "technical_dribble", "technical_shortpass",
                     "technical_highpass", "technical_header", "technical_shot",
                     "technical_volley", "mental_calmness", "mental_workrate",
-                    "mental_resilience", "mental_defensivepositioning", "mental_offensivepositioning"
+                    "mental_resilience", "mental_defensivepositioning", "mental_offensivepositioning",
+                    "mental_vision"
                 };
                 for (int s = 0; s < kNumPlayerStats; ++s) {
                     ps.stats[s] = pd->GetStat(statNames[s]);
@@ -203,7 +226,14 @@ void Server::sendMatchSetup() {
     auto roomBytes = cfg_.roomId.substr(0, 36);
     std::memcpy(setupBuf.data(), roomBytes.c_str(), roomBytes.size());
     std::memcpy(setupBuf.data() + 36, &setup, sizeof(setup));
-    cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
+    if (hasRedis) {
+        cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
+    }
+#ifdef USE_LIVEKIT
+    if (hasLiveKit) {
+        livekitBridge_->publishData(setupBuf.data() + 36, sizeof(setup), "setup", true);
+    }
+#endif
     matchSetupSent_ = true;
     std::cout << "[GameServer] MatchSetup broadcast (" << sizeof(setup) << " bytes)" << std::endl;
 }
@@ -217,8 +247,34 @@ void Server::run() {
     if (std::getenv("GFOOTBALL_FONT") == nullptr) {
         setenv("GFOOTBALL_FONT", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 1);
     }
+    const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
+    if (dataDir && chdir(dataDir) != 0) {
+        std::cerr << "[GameServer] Warning: failed to chdir to " << dataDir << std::endl;
+    }
 
     // Redis is already configured by main() and passed via cfg_.redis
+
+    // Warn if no broadcast transport is configured (clients will see gsLen==0)
+    bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
+    bool hasLiveKit = !cfg_.livekitUrl.empty() && !cfg_.livekitToken.empty();
+    if (!hasRedis && !hasLiveKit) {
+        std::cerr << "[GameServer] WARNING: No broadcast transport configured. "
+                  << "Clients will not receive game state (gsLen==0). "
+                  << "Set --redis-url=... or --livekit-url=... + --livekit-token=..." << std::endl;
+    }
+
+#ifdef USE_LIVEKIT
+    if (hasLiveKit) {
+        livekitBridge_ = new LiveKitBridge();
+        if (livekitBridge_->connect(cfg_.livekitUrl, cfg_.livekitToken, cfg_.roomId)) {
+            std::cout << "[GameServer] LiveKit connected to room " << cfg_.roomId << std::endl;
+        } else {
+            std::cerr << "[GameServer] LiveKit connection failed" << std::endl;
+            delete livekitBridge_;
+            livekitBridge_ = nullptr;
+        }
+    }
+#endif
 
     gameEnv_ = new GameEnv();
 
@@ -251,6 +307,7 @@ void Server::run() {
 
     if (hasCustomConfig) {
         sc.game_duration = mcfg.duration_seconds * kSimFrequencyHz;
+        stadiumId_ = mcfg.stadium_id;
         if (!mcfg.left_team.formation.empty()) {
             sc.left_team = buildFormation(mcfg.left_team);
         }
@@ -533,6 +590,11 @@ void Server::tick() {
 
                 // Deduce animation using internal GF state when available
                 ps.anim = deduceAnimId(static_cast<int>(i), teamId);
+                // Override with celebration if goal was just scored by this player
+                int globalIdx = baseIdx + static_cast<int>(i);
+                if (globalIdx < kMaxPlayers && tickCounter_ < celebrationExpiryTick_[globalIdx]) {
+                    ps.anim = ANIM_CELEBRATE;
+                }
             }
         };
 
@@ -562,7 +624,11 @@ void Server::tick() {
                         os.dir[1] = d.coords[1];
                         os.dir[2] = d.coords[2];
                         os.rotY = getHeadingFromDir(os.dir[0], os.dir[1]);
-                        os.anim = dzfoot::ANIM_IDLE;
+                        float vel = off->GetFloatVelocity();
+                        if (vel < 0.5f) os.anim = dzfoot::ANIM_IDLE;
+                        else if (vel < 3.0f) os.anim = dzfoot::ANIM_WALK;
+                        else if (vel < 6.0f) os.anim = dzfoot::ANIM_RUN;
+                        else os.anim = dzfoot::ANIM_SPRINT;
                         os.team = 2; // officials team ID
                         os.role = offs[o].role;
                         os.flags = 1; // active
@@ -746,6 +812,11 @@ void Server::tick() {
             eventQueue_.push_back(ev);
             stats_.goals[0]++;
             lastScoreA_ = info.left_goals;
+            // Force celebration on scorer (~3 seconds at 60Hz)
+            int scorerIdx = info.ball_owned_player;
+            if (scorerIdx >= 0 && scorerIdx < 11) {
+                celebrationExpiryTick_[scorerIdx] = tickCounter_ + 180; // 3 sec
+            }
         }
         if (info.right_goals > lastScoreB_) {
             resolveShotsOnGoal(1, info.ball_owned_player);
@@ -762,6 +833,11 @@ void Server::tick() {
             eventQueue_.push_back(ev);
             stats_.goals[1]++;
             lastScoreB_ = info.right_goals;
+            // Force celebration on scorer (~3 seconds at 60Hz)
+            int scorerIdx = info.ball_owned_player;
+            if (scorerIdx >= 0 && scorerIdx < 11) {
+                celebrationExpiryTick_[11 + scorerIdx] = tickCounter_ + 180; // 3 sec
+            }
         }
 
         // Game mode transitions -> events
@@ -1070,21 +1146,42 @@ void Server::updateTacticalState() {
 }
 
 void Server::broadcastTacticalState() {
-    if (!cfg_.redis || !cfg_.redis->isConfigured()) return;
+    bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
+#ifdef USE_LIVEKIT
+    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
+#else
+    bool hasLiveKit = false;
+#endif
+    if (!hasRedis && !hasLiveKit) return;
+
     tacticalState_.header.magic = dzfoot::DZ_MAGIC;
     tacticalState_.header.version = dzfoot::DZ_PROTOCOL_VERSION;
     tacticalState_.header.type = dzfoot::PACKET_TACTICAL_STATE;
     tacticalState_.header.size = static_cast<uint16_t>(sizeof(tacticalState_));
     tacticalState_.header.flags = 0;
     auto roomBytes = cfg_.roomId.substr(0, 36);
-    std::vector<uint8_t> buf(36 + sizeof(tacticalState_));
-    std::memcpy(buf.data(), roomBytes.c_str(), roomBytes.size());
-    std::memcpy(buf.data() + 36, &tacticalState_, sizeof(tacticalState_));
-    cfg_.redis->publishBinary("gf.tactical", buf.data(), buf.size());
+
+    if (hasRedis) {
+        std::vector<uint8_t> buf(36 + sizeof(tacticalState_));
+        std::memcpy(buf.data(), roomBytes.c_str(), roomBytes.size());
+        std::memcpy(buf.data() + 36, &tacticalState_, sizeof(tacticalState_));
+        cfg_.redis->publishBinary("gf.tactical", buf.data(), buf.size());
+    }
+#ifdef USE_LIVEKIT
+    if (hasLiveKit) {
+        livekitBridge_->publishData(reinterpret_cast<const uint8_t*>(&tacticalState_), sizeof(tacticalState_), "tac", false);
+    }
+#endif
 }
 
 void Server::broadcastGameState() {
-    if (!cfg_.redis || !cfg_.redis->isConfigured()) return;
+    bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
+#ifdef USE_LIVEKIT
+    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
+#else
+    bool hasLiveKit = false;
+#endif
+    if (!hasRedis && !hasLiveKit) return;
 
     // Fill protocol header before broadcast
     currentState_.header.magic   = dzfoot::DZ_MAGIC;
@@ -1095,11 +1192,18 @@ void Server::broadcastGameState() {
 
     auto roomBytes = cfg_.roomId.substr(0, 36);
 
-    // Prefix room_id (36 bytes) for backend routing
-    std::vector<uint8_t> gsBuf(36 + sizeof(currentState_));
-    std::memcpy(gsBuf.data(), roomBytes.c_str(), roomBytes.size());
-    std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
-    cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
+    if (hasRedis) {
+        // Prefix room_id (36 bytes) for backend routing
+        std::vector<uint8_t> gsBuf(36 + sizeof(currentState_));
+        std::memcpy(gsBuf.data(), roomBytes.c_str(), roomBytes.size());
+        std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
+        cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
+    }
+#ifdef USE_LIVEKIT
+    if (hasLiveKit) {
+        livekitBridge_->publishData(reinterpret_cast<const uint8_t*>(&currentState_), sizeof(currentState_), "gs", false);
+    }
+#endif
 
     for (auto& ev : eventQueue_) {
         ev.header.magic   = dzfoot::DZ_MAGIC;
@@ -1110,7 +1214,14 @@ void Server::broadcastGameState() {
         std::vector<uint8_t> evBuf(36 + sizeof(ev));
         std::memcpy(evBuf.data(), roomBytes.c_str(), roomBytes.size());
         std::memcpy(evBuf.data() + 36, &ev, sizeof(ev));
-        cfg_.redis->publishBinary("gf.event", evBuf.data(), evBuf.size());
+        if (hasRedis) {
+            cfg_.redis->publishBinary("gf.event", evBuf.data(), evBuf.size());
+        }
+#ifdef USE_LIVEKIT
+        if (hasLiveKit) {
+            livekitBridge_->publishData(evBuf.data() + 36, sizeof(ev), "ev", true);
+        }
+#endif
     }
     eventQueue_.clear();
 }

@@ -45,6 +45,7 @@ bool MatchConfig::loadString(const std::string& jsonStr, MatchConfig& out) {
 
         out.duration_seconds = j.value("duration_seconds", 600);
         out.mode = j.value("mode", "vs_ai");
+        out.stadium_id = j.value("stadium_id", "");
 
         auto parseTeam = [&](const json& teamJ, TeamConfig& tc) {
             tc.name = teamJ.value("name", "default");
