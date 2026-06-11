@@ -120,6 +120,16 @@ namespace blunted {
   void MockRenderer3D::HDRCaptureOverallBrightness() {}
   float MockRenderer3D::HDRGetOverallBrightness() { return 1.0f; }
 
-  void MockRenderer3D::operator()() {}
+  void MockRenderer3D::operator()() {
+    bool quit = false;
+    while (!quit) {
+      bool isMessage;
+      boost::intrusive_ptr<Command> message = messageQueue.WaitForMessage(isMessage, 1);
+      if (isMessage) {
+        if (!message->Handle(this)) quit = true;
+        message.reset();
+      }
+    }
+  }
 
 }
