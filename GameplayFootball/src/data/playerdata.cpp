@@ -17,6 +17,10 @@ PlayerData::PlayerData(int playerDatabaseID) : databaseID(playerDatabaseID) {
 
   DatabaseResult *result = GetDB()->Query("select firstname, lastname, role, base_stat, profile_xml, age, skincolor, hairstyle, haircolor, height from players where id = " + int_to_str(databaseID) + " limit 1");
 
+  if (result->data.empty()) {
+    Log(e_FatalError, "PlayerData", "PlayerData", "Could not find player with database ID " + int_to_str(databaseID));
+  }
+
   std::string roleString;
   std::string profileString;
   float baseStat = 0.0f;

@@ -63,10 +63,8 @@ struct Config {
     int duration = 600; // seconds
     std::string statsUrl;
     std::string redisUrl;
-    std::string livekitUrl;
-    std::string livekitToken;
     RedisClient* redis = nullptr; // for publishing game states + subscribing inputs
-    int broadcastRateHz = 20; // GameState broadcast rate (simulation stays at 60 Hz)
+    int broadcastRateHz = 20; // GameState broadcast rate (simulation at 100 Hz, state at 60 Hz)
     uint8_t gameMode = 1; // 0=1v1 (both human), 1=vs AI (A human, B AI)
     std::atomic<bool>* shutdownFlag = nullptr; // graceful shutdown from signal handler
     std::string matchConfigPath; // JSON file with formation, duration, etc. (optional)
@@ -117,7 +115,7 @@ public:
     void sendMatchSetup();
 
 private:
-    void tick();
+    void updateState();
     void broadcastGameState();
     void updateTacticalState();
     void broadcastTacticalState();
@@ -174,10 +172,8 @@ private:
     // Goal celebration: force ANIM_CELEBRATE on scorer for ~3 seconds
     int     celebrationExpiryTick_[kMaxPlayers] = {};
 
-#ifdef USE_LIVEKIT
-    class LiveKitBridge;
-    LiveKitBridge* livekitBridge_ = nullptr;
-#endif
+// NOTE: LiveKit publishing is done by the backend Python bot, not by gf_server.
+// gf_server only uses Redis for all network I/O.
 
     // Jersey numbers from match config JSON (index = team*11 + player)
     uint8_t playerNumbers_[DZ_MAX_PLAYERS] = {};

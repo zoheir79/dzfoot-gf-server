@@ -31,6 +31,7 @@ namespace blunted {
       virtual ~GraphicsSystem();
 
       virtual void Initialize(const Properties &config);
+      void Initialize(bool render, int width, int height);
       virtual void Exit();
 
       e_SystemType GetSystemType() const;

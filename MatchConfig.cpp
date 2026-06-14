@@ -2,6 +2,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <iostream>
+#include <filesystem>
 
 using json = nlohmann::json;
 
@@ -93,6 +94,14 @@ bool MatchConfig::loadString(const std::string& jsonStr, MatchConfig& out) {
 }
 
 bool MatchConfig::load(const std::string& path, MatchConfig& out) {
+    if (!std::filesystem::exists(path)) {
+        std::cerr << "[MatchConfig] File does not exist: " << path << std::endl;
+        return false;
+    }
+    if (!std::filesystem::is_regular_file(path)) {
+        std::cerr << "[MatchConfig] Path is not a regular file: " << path << std::endl;
+        return false;
+    }
     std::ifstream f(path);
     if (!f.is_open()) {
         std::cerr << "[MatchConfig] Cannot open " << path << std::endl;

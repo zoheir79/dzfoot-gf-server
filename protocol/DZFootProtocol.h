@@ -17,6 +17,10 @@ namespace dzfoot {
 constexpr uint32_t DZ_MAGIC           = 0x54465A44; // 'DZFT' little-endian
 constexpr uint16_t DZ_PROTOCOL_VERSION = 1;
 constexpr uint8_t  DZ_MAX_PLAYERS      = 22;
+// kSimFrequencyHz is the SERVER PHYSICS TICK RATE (not state-update nor broadcast rate).
+// GameStatePacket.tick is a physics tick counter. The client must use this frequency
+// to convert tick → milliseconds for interpolation and dead reckoning.
+constexpr int      kSimFrequencyHz     = 100;
 
 // ------------------------------------------------------------------
 // Packet header (present in every packet)

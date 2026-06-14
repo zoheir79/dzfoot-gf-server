@@ -25,7 +25,7 @@ class MenuTask;
 struct ScenarioConfig {
   int left_agents = 1;
   int right_agents = 0;
-  int game_duration = 3000;  // steps at 60Hz = 50 sec default
+  int game_duration = 6000;  // steps at 100Hz = 60 sec default
   std::vector<FormationEntry> left_team;
   std::vector<FormationEntry> right_team;
   Vector3 ball_position;
@@ -81,6 +81,7 @@ class GameEnv {
   void step();
   SharedInfo get_info();
   void action(int action, bool left_team, int player);
+  void reset_inputs();
 
   // Apply custom formations from scenario_config to the live match.
   // Must be called after start_game() (Match exists) and before the loop.

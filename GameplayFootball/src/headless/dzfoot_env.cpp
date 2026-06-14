@@ -1,4 +1,4 @@
-// DZFoot Headless Environment — wraps vi3itor engine for 60Hz server simulation
+// DZFoot Headless Environment — wraps vi3itor engine for 100Hz server simulation
 
 #include "dzfoot_env.hpp"
 #include "hid_remote_controller.hpp"
@@ -27,6 +27,7 @@
 #include "../utils/database.hpp"
 
 // Global variables defined in main.cpp, used for headless init/shutdown
+extern Properties *config;
 extern GraphicsSystem *graphicsSystem;
 extern Database *db;
 extern boost::shared_ptr<Scene2D> scene2D;
@@ -58,15 +59,15 @@ DZFootEnv::~DZFootEnv() {
 void DZFootEnv::Initialize(int resX, int resY) {
   if (initialized_) return;
 
-  // Config properties
-  Properties *config = new Properties();
+  // Config properties — assign to the global config variable defined in main.cpp
+  config = new Properties();
   config->SetBool("render", false);  // headless
   config->SetInt("context_x", resX);
   config->SetInt("context_y", resY);
   config->SetInt("context_bpp", 32);
   config->SetInt("context_fullscreen", 0);
   config->Set("graphics3d_renderer", "opengl");
-  config->SetInt("physics_frametime_ms", 10);  // will be overridden by 60Hz patches
+  config->SetInt("physics_frametime_ms", 10);  // 10 ms = 100 Hz physics
 
   DoInitialize(config);
 
@@ -92,12 +93,14 @@ void DZFootEnv::Initialize(int resX, int resY) {
   // Initialize systems
   graphicsSystem = new GraphicsSystem();
   SystemManager::GetInstancePtr()->RegisterSystem("GraphicsSystem", graphicsSystem);
-  graphicsSystem->Initialize(*config);
+  graphicsSystem->Initialize(false, resX, resY);  // headless: MockRenderer3D, no gfx thread
 
   // Init scenes
   scene2D = boost::shared_ptr<Scene2D>(new Scene2D("scene2D", *config));
   SceneManager::GetInstance().RegisterScene(scene2D);
-  delete config;
+  // NOTE: do NOT delete config here — IsReleaseVersion() and other code
+  // access the global config pointer later. Small one-time leak is acceptable
+  // for a headless server lifetime.
 
   scene3D = boost::shared_ptr<Scene3D>(new Scene3D("scene3D"));
   SceneManager::GetInstance().RegisterScene(scene3D);
@@ -152,9 +155,12 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
     return;
   }
 
+  std::cout << "[DZF] StartMatch: creating MatchData for teams " << team1DbID << " vs " << team2DbID << std::endl;
   // Create match data
   MatchData *matchData = new MatchData(team1DbID, team2DbID);
+  std::cout << "[DZF] StartMatch: MatchData created" << std::endl;
   menuTask->SetMatchData(matchData);
+  std::cout << "[DZF] StartMatch: MatchData set on MenuTask" << std::endl;
 
   // Set controller setup: first 11 controllers = team 0, next 11 = team 1
   std::vector<SideSelection> setup;
@@ -165,9 +171,12 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
     SideSelection s; s.controllerID = i + playerNum; s.side = 1; setup.push_back(s);
   }
   menuTask->SetControllerSetup(setup);
+  std::cout << "[DZF] StartMatch: controller setup done (22 controllers)" << std::endl;
 
   // Start the match
+  std::cout << "[DZF] StartMatch: calling gameTask->Action(StartMatch) ..." << std::endl;
   gameTask->Action(e_GameTaskMessage_StartMatch);
+  std::cout << "[DZF] StartMatch: gameTask->Action returned OK" << std::endl;
   matchRunning_ = true;
   step_ = 0;
 }
@@ -175,8 +184,24 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
 void DZFootEnv::Step() {
   if (!matchRunning_) return;
 
-  // Process one game tick
-  gameTask->ProcessPhase();
+  // === GameSequence (sequential headless tick) ===
+  // NOTE: menuTask phases are intentionally skipped — the MenuTask
+  // is only needed for MatchData storage and controller setup in
+  // headless mode.  Its ProcessPhase() contains a menu state machine
+  // that would call gameTask->Action(StopMatch) on the first tick.
+
+  gameTask->GetPhase();       // inputs / match->Get()
+  gameTask->ProcessPhase();   // physics / match->Process()
+
+  // === GraphicsSequence (continues sequentially in headless) ===
+  gameTask->PutPhase();       // match->Put() + fullbody model update + upload geometry
+
+  // GraphicsTask — executed sequentially (no separate thread in headless)
+  ISystemTask* gfxTask = graphicsSystem->GetTask();
+  gfxTask->GetPhase();        // collect visibles, poke cameras
+  gfxTask->ProcessPhase();    // shadow maps, render camera, overlay2D
+  gfxTask->PutPhase();        // SwapBuffers → MockRenderer3D no-op
+
   step_++;
 }
 
@@ -316,13 +341,12 @@ void DZFootEnv::Shutdown() {
   scene2D.reset();
   scene3D.reset();
 
-  delete graphicsSystem;
-  graphicsSystem = nullptr;
-
+  // NOTE: do NOT delete graphicsSystem here — SystemManager::Exit()
+  // already iterates registered systems, calls Exit() and deletes them.
   delete db;
   db = nullptr;
 
-  Exit();  // blunted engine shutdown
+  Exit();  // blunted engine shutdown (deletes graphicsSystem via SystemManager)
 
   initialized_ = false;
 }

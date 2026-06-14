@@ -60,6 +60,10 @@ TeamData::TeamData(int teamDatabaseID) : databaseID(teamDatabaseID) {
 
   DatabaseResult *result = GetDB()->Query("select teams.name, teams.logo_url, teams.kit_url, teams.formation_xml, teams.formation_factory_xml, teams.tactics_xml, teams.tactics_factory_xml, teams.shortname, teams.color1, teams.color2 from teams, leagues where teams.id = " + int_to_str(databaseID) + " and leagues.id = teams.league_id limit 1");
 
+  if (result->data.empty()) {
+    Log(e_FatalError, "TeamData", "TeamData", "Could not find team with database ID " + int_to_str(databaseID));
+  }
+
   std::string formationString;
   std::string factoryFormationString;
   std::string factoryTacticsString;

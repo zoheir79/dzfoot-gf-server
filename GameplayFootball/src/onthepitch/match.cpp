@@ -23,6 +23,8 @@
 
 #include "base/log.hpp"
 
+#include <iostream>
+
 #include "menu/pagefactory.hpp"
 #include "menu/startmatch/loadingmatch.hpp"
 
@@ -31,12 +33,22 @@ const unsigned int camPosSize = 150;//180; //130
 
 Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) : matchData(matchData), controllers(controllers) {
 
+  std::cout << "[Match] constructor START" << std::endl;
+  std::cout << "[Match] before Log Starting Match" << std::endl;
   Log(e_Notice, "Match", "Match", "Starting Match");
+  std::cout << "[Match] after Log Starting Match" << std::endl;
 
   _positionLogging = false;
 
   // shared ptr to menutask, because menutask shouldn't die before match does
   menuTask = GetMenuTask();
+
+  // Headless safety: these are created later in the constructor; if we crash
+  // before reaching their creation, Exit() must not dereference garbage.
+  radar = 0;
+  scoreboard = 0;
+  messageCaption = 0;
+  tacticsDebug = 0;
 
   iterations.SetData(0);
   actualTime_ms = 0;
@@ -52,28 +64,30 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   matchDurationFactor = GetConfiguration()->GetReal("match_duration", 1.0) * 0.2f + 0.05f;
   matchDifficulty = GetConfiguration()->GetReal("match_difficulty", 0.8f);
 
+  std::cout << "[Match] before dynamicNode" << std::endl;
   Log(e_Notice, "Match", "Match", "Creating dynamicNode");
-
   dynamicNode = boost::intrusive_ptr<Node>(new Node("dynamicNode"));
+  std::cout << "[Match] before AddNode dynamicNode" << std::endl;
   GetScene3D()->AddNode(dynamicNode);
+  std::cout << "[Match] after AddNode dynamicNode" << std::endl;
 
   Log(e_Notice, "Match", "Match", "Adding debugpilons");
 
-  dynamicNode->AddObject(GetGreenDebugPilon());
-  dynamicNode->AddObject(GetBlueDebugPilon());
-  dynamicNode->AddObject(GetYellowDebugPilon());
-  dynamicNode->AddObject(GetRedDebugPilon());
-  dynamicNode->AddObject(GetSmallDebugCircle1());
-  dynamicNode->AddObject(GetSmallDebugCircle2());
-  dynamicNode->AddObject(GetLargeDebugCircle());
+  if (GetGreenDebugPilon()) dynamicNode->AddObject(GetGreenDebugPilon());
+  if (GetBlueDebugPilon()) dynamicNode->AddObject(GetBlueDebugPilon());
+  if (GetYellowDebugPilon()) dynamicNode->AddObject(GetYellowDebugPilon());
+  if (GetRedDebugPilon()) dynamicNode->AddObject(GetRedDebugPilon());
+  if (GetSmallDebugCircle1()) dynamicNode->AddObject(GetSmallDebugCircle1());
+  if (GetSmallDebugCircle2()) dynamicNode->AddObject(GetSmallDebugCircle2());
+  if (GetLargeDebugCircle()) dynamicNode->AddObject(GetLargeDebugCircle());
 
 
   // ball
 
+  std::cout << "[Match] before Ball" << std::endl;
   Log(e_Notice, "Match", "Match", "Creating a ball");
-
   ball = new Ball(this);
-
+  std::cout << "[Match] after Ball" << std::endl;
 
   // animation database
 
@@ -103,7 +117,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
     //printf("\n");
     animPositionCache.insert(std::pair < Animation*, std::vector<Vector3> >(someAnim, positions));
   }
-
+  std::cout << "[Match] after anims cached" << std::endl;
 
   // full body model template
 
@@ -111,6 +125,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   ObjectLoader loader;
   fullbodyNode = loader.LoadObject(GetScene3D(), "media/objects/players/fullbody.object");
+  std::cout << "[Match] after fullbodyNode" << std::endl;
 
   Log(e_Notice, "Match", "Match", "Fullbody object: getting vertex colors");
 
@@ -131,6 +146,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   teams[1] = new Team(1, this, matchData->GetTeamData(1));
   teams[0]->InitPlayers(fullbodyNode, colorCoords);
   teams[1]->InitPlayers(fullbodyNode, colorCoords);
+  std::cout << "[Match] after teams init" << std::endl;
 
   std::vector<Player*> activePlayers;
   teams[0]->GetActivePlayers(activePlayers);
@@ -145,6 +161,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   std::string kitFilename = "media/objects/players/textures/referee_kit.png";
   boost::intrusive_ptr < Resource<Surface> > kit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
   officials = new Officials(this, fullbodyNode, colorCoords, kit, anims);
+  std::cout << "[Match] after officials" << std::endl;
 
   dynamicNode->AddObject(officials->GetYellowCardGeom());
   dynamicNode->AddObject(officials->GetRedCardGeom());
@@ -163,6 +180,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cameraNode->AddObject(camera);
   cameraNode->SetPosition(Vector3(40, 0, 100));
   GetDynamicNode()->AddNode(cameraNode);
+  std::cout << "[Match] after camera" << std::endl;
 
   cameraUserZoom = GetConfiguration()->GetReal("camera_zoom", _default_CameraZoom);
   cameraUserHeight = GetConfiguration()->GetReal("camera_height", _default_CameraHeight);
@@ -203,6 +221,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   stadiumNode->SetLocalMode(e_LocalMode_Absolute);
   GetScene3D()->AddNode(stadiumNode);
+  std::cout << "[Match] after stadium" << std::endl;
 
 
   // goal netting
@@ -213,6 +232,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   goalsNode->SetLocalMode(e_LocalMode_Absolute);
   GetScene3D()->AddNode(goalsNode);
   PrepareGoalNetting();
+  std::cout << "[Match] after goals/netting" << std::endl;
 
 
   // pitch
@@ -224,6 +244,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   } else {
     GeneratePitch(1024, 512, 1024, 512, 2048, 1024);
   }
+  std::cout << "[Match] after pitch" << std::endl;
 
 
   // sun
@@ -233,6 +254,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   sunNode = loader.LoadObject(GetScene3D(), "media/objects/lighting/generic.object");
   GetDynamicNode()->AddNode(sunNode);
   SetRandomSunParams();
+  std::cout << "[Match] after sun" << std::endl;
 
 
   // human gamers
@@ -240,6 +262,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   Log(e_Notice, "Match", "Match", "Human gamer controller init");
 
   UpdateControllerSetup();
+  std::cout << "[Match] after controller setup" << std::endl;
 
 
   // 12th man sound
@@ -263,6 +286,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   crowd02->SetLoop(true);
   crowd02->Poke(e_SystemType_Audio);
   GetScene3D()->AddObject(crowd02);
+  std::cout << "[Match] after crowd sounds" << std::endl;
 
 
   // match params
@@ -295,6 +319,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   Log(e_Notice, "Match", "Match", "Creating referee functionality");
 
   referee = new Referee(this);
+  std::cout << "[Match] after referee" << std::endl;
 
 
   // GUI
@@ -340,6 +365,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   messageCaption->SetTransparency(0.3f);
   root->AddView(messageCaption);
   messageCaptionRemoveTime_ms = actualTime_ms + 5000;
+  std::cout << "[Match] after GUI" << std::endl;
 
   // for usage in destructor
   scene3D = GetScene3D();
@@ -360,6 +386,7 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
     spatialIter++;
   }
   replayBallTouchesNetFrames = boost::circular_buffer<ReplayBallTouchesNetFrame>(GetReplaySize_ms() / 10);
+  std::cout << "[Match] after replays" << std::endl;
 
   excitement = 0.0f;
 
@@ -396,8 +423,9 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   sig_OnCreatedMatch(this);
   if (Verbose()) printf("set..\n");
   LoadingMatchPage *loadingMatchPage = static_cast<LoadingMatchPage*>(menuTask->GetWindowManager()->GetPageFactory()->GetMostRecentlyCreatedPage());
-  loadingMatchPage->Close();
+  if (loadingMatchPage) loadingMatchPage->Close();
   if (Verbose()) printf("loadingmatchpage closed\n");
+  std::cout << "[Match] constructor END" << std::endl;
 }
 
 Match::~Match() {
@@ -435,16 +463,16 @@ void Match::Exit() {
   fullbodyNode->Exit();
   fullbodyNode.reset();
 
-  messageCaption->Hide();
+  if (messageCaption) messageCaption->Hide();
 
   // remove, don't delete, because main.cpp is owner
-  GetDynamicNode()->RemoveObject(GetGreenDebugPilon());
-  GetDynamicNode()->RemoveObject(GetBlueDebugPilon());
-  GetDynamicNode()->RemoveObject(GetYellowDebugPilon());
-  GetDynamicNode()->RemoveObject(GetRedDebugPilon());
-  GetDynamicNode()->RemoveObject(GetSmallDebugCircle1());
-  GetDynamicNode()->RemoveObject(GetSmallDebugCircle2());
-  GetDynamicNode()->RemoveObject(GetLargeDebugCircle());
+  if (GetGreenDebugPilon()) GetDynamicNode()->RemoveObject(GetGreenDebugPilon());
+  if (GetBlueDebugPilon()) GetDynamicNode()->RemoveObject(GetBlueDebugPilon());
+  if (GetYellowDebugPilon()) GetDynamicNode()->RemoveObject(GetYellowDebugPilon());
+  if (GetRedDebugPilon()) GetDynamicNode()->RemoveObject(GetRedDebugPilon());
+  if (GetSmallDebugCircle1()) GetDynamicNode()->RemoveObject(GetSmallDebugCircle1());
+  if (GetSmallDebugCircle2()) GetDynamicNode()->RemoveObject(GetSmallDebugCircle2());
+  if (GetLargeDebugCircle()) GetDynamicNode()->RemoveObject(GetLargeDebugCircle());
 
   scene3D->DeleteNode(GetDynamicNode());
   scene3D->DeleteNode(stadiumNode);
@@ -453,15 +481,19 @@ void Match::Exit() {
   scene3D->DeleteObject(crowd01);
   scene3D->DeleteObject(crowd02);
 
-  radar->Exit();
-  delete radar;
+  if (radar) {
+    radar->Exit();
+    delete radar;
+  }
   if (tacticsDebug) {
     tacticsDebug->Exit();
     delete tacticsDebug;
   }
 
-  scoreboard->Exit();
-  delete scoreboard;
+  if (scoreboard) {
+    scoreboard->Exit();
+    delete scoreboard;
+  }
 
   animPositionCache.clear();
 
@@ -1386,13 +1418,13 @@ void Match::GetReplaySpatials(std::list < boost::intrusive_ptr<Spatial> > &spati
   spatials.push_back(teams[1]->GetSceneNode());
   teams[1]->GetSceneNode()->GetSpatials(spatials);
   spatials.push_back(ball->GetBallGeom());
-  spatials.push_back(GetGreenDebugPilon());
-  spatials.push_back(GetBlueDebugPilon());
-  spatials.push_back(GetYellowDebugPilon());
-  spatials.push_back(GetRedDebugPilon());
-  spatials.push_back(GetSmallDebugCircle1());
-  spatials.push_back(GetSmallDebugCircle2());
-  spatials.push_back(GetLargeDebugCircle());
+  if (GetGreenDebugPilon()) spatials.push_back(GetGreenDebugPilon());
+  if (GetBlueDebugPilon()) spatials.push_back(GetBlueDebugPilon());
+  if (GetYellowDebugPilon()) spatials.push_back(GetYellowDebugPilon());
+  if (GetRedDebugPilon()) spatials.push_back(GetRedDebugPilon());
+  if (GetSmallDebugCircle1()) spatials.push_back(GetSmallDebugCircle1());
+  if (GetSmallDebugCircle2()) spatials.push_back(GetSmallDebugCircle2());
+  if (GetLargeDebugCircle()) spatials.push_back(GetLargeDebugCircle());
   spatials.push_back(officials->GetYellowCardGeom());
   spatials.push_back(officials->GetRedCardGeom());
 

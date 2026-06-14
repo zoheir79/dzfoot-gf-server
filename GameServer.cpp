@@ -2,9 +2,6 @@
 #include "RedisClient.h"
 #include "StatsPoster.h"
 #include "MatchConfig.h"
-#ifdef USE_LIVEKIT
-#include "LiveKitBridge.h"
-#endif
 #include <iostream>
 #include <thread>
 #include <chrono>
@@ -101,23 +98,12 @@ Server::Server(const Config& cfg) : cfg_(cfg) {
 
 // Defined here (not in header) so unique_ptr<RedisClient> can see complete type.
 Server::~Server() {
-#ifdef USE_LIVEKIT
-    if (livekitBridge_) {
-        livekitBridge_->disconnect();
-        delete livekitBridge_;
-        livekitBridge_ = nullptr;
-    }
-#endif
+    // gf_server uses Redis only — no direct LiveKit connection.
 }
 
 void Server::sendMatchSetup() {
     bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
-#ifdef USE_LIVEKIT
-    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
-#else
-    bool hasLiveKit = false;
-#endif
-    if (!gameEnv_ || (!hasRedis && !hasLiveKit)) return;
+    if (!gameEnv_ || !hasRedis) return;
 
     MatchSetupPacket setup{};
     setup.header.magic = dzfoot::DZ_MAGIC;
@@ -129,6 +115,8 @@ void Server::sendMatchSetup() {
     copyString(setup.teamBName, sizeof(setup.teamBName), cfg_.teamB);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
     {
+        // Simple string hash (uint8_t) — 256 possible values. Collisions are
+        // extremely unlikely for the small set of stadium names DZFoot uses.
         uint8_t hash = 0;
         for (char c : stadiumId_) hash = hash * 31 + static_cast<uint8_t>(c);
         setup.stadiumId = hash;
@@ -172,7 +160,7 @@ void Server::sendMatchSetup() {
             ps.index = static_cast<uint8_t>(idx);
             ps.team = static_cast<uint8_t>(t);
             ps.role = static_cast<uint8_t>(p->GetFormationEntry().role);
-            ps.playerNumber = playerNumbers_[idx] ? playerNumbers_[idx] : static_cast<uint8_t>(i + 1); // config or fallback
+            ps.playerNumber = (playerNumbers_[idx] != 0) ? playerNumbers_[idx] : static_cast<uint8_t>(i + 1); // config or fallback
             ps.bodyType = bodyTypes_[idx];
             ps.beardStyle = beardStyles_[idx];
             ps.eyeColor = eyeColors_[idx];
@@ -226,14 +214,7 @@ void Server::sendMatchSetup() {
     auto roomBytes = cfg_.roomId.substr(0, 36);
     std::memcpy(setupBuf.data(), roomBytes.c_str(), roomBytes.size());
     std::memcpy(setupBuf.data() + 36, &setup, sizeof(setup));
-    if (hasRedis) {
-        cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
-    }
-#ifdef USE_LIVEKIT
-    if (hasLiveKit) {
-        livekitBridge_->publishData(setupBuf.data() + 36, sizeof(setup), "setup", true);
-    }
-#endif
+    cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
     matchSetupSent_ = true;
     std::cout << "[GameServer] MatchSetup broadcast (" << sizeof(setup) << " bytes)" << std::endl;
 }
@@ -253,28 +234,11 @@ void Server::run() {
     }
 
     // Redis is already configured by main() and passed via cfg_.redis
-
-    // Warn if no broadcast transport is configured (clients will see gsLen==0)
     bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
-    bool hasLiveKit = !cfg_.livekitUrl.empty() && !cfg_.livekitToken.empty();
-    if (!hasRedis && !hasLiveKit) {
-        std::cerr << "[GameServer] WARNING: No broadcast transport configured. "
-                  << "Clients will not receive game state (gsLen==0). "
-                  << "Set --redis-url=... or --livekit-url=... + --livekit-token=..." << std::endl;
+    if (!hasRedis) {
+        std::cerr << "[GameServer] WARNING: Redis not configured. No game state will be broadcast."
+                  << " Set --redis-url=..." << std::endl;
     }
-
-#ifdef USE_LIVEKIT
-    if (hasLiveKit) {
-        livekitBridge_ = new LiveKitBridge();
-        if (livekitBridge_->connect(cfg_.livekitUrl, cfg_.livekitToken, cfg_.roomId)) {
-            std::cout << "[GameServer] LiveKit connected to room " << cfg_.roomId << std::endl;
-        } else {
-            std::cerr << "[GameServer] LiveKit connection failed" << std::endl;
-            delete livekitBridge_;
-            livekitBridge_ = nullptr;
-        }
-    }
-#endif
 
     gameEnv_ = new GameEnv();
 
@@ -284,7 +248,7 @@ void Server::run() {
     auto& sc = gameEnv_->scenario_config;
     sc.left_agents = (cfg_.gameMode == 2) ? 0 : 1;  // 0 for ai_vs_ai, 1 otherwise
     sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0; // 1 for 1v1, 0 for vs_ai/ai_vs_ai
-    sc.game_duration = cfg_.duration * kSimFrequencyHz;  // GF steps (60 steps/sec)
+    sc.game_duration = cfg_.duration * dzfoot::kSimFrequencyHz;  // GF steps (100 steps/sec)
 
     // Load custom configuration if provided (via JSON string or path)
     MatchConfig mcfg;
@@ -306,7 +270,7 @@ void Server::run() {
     }
 
     if (hasCustomConfig) {
-        sc.game_duration = mcfg.duration_seconds * kSimFrequencyHz;
+        sc.game_duration = mcfg.duration_seconds * dzfoot::kSimFrequencyHz;
         stadiumId_ = mcfg.stadium_id;
         if (!mcfg.left_team.formation.empty()) {
             sc.left_team = buildFormation(mcfg.left_team);
@@ -411,15 +375,24 @@ void Server::run() {
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
-    // DZFoot 60Hz refactor: 60 environment-steps/sec, each step() = 1 physics frame.
-    // physics_steps_per_frame is now 1 (see main.hpp).
-    // We cadence the loop at simTicksPerSec and broadcast at broadcastRateHz.
-    const int simTicksPerSec = 60;
+    // === Three independent frequencies (DO NOT MIX) ===
+    // 1. Physics simulation : 100 Hz  (gameEnv_->step(), most accurate)
+    // 2. State extraction     : 60 Hz  (updateState(), what goes into GameStatePacket)
+    // 3. LiveKit broadcast    : 20 Hz  (broadcastGameState(), packets to Android)
+    // Android receives at 20 Hz and renders at 60 Hz.
+    //
+    // NOTE: accumulateStats() runs inside updateState() (60 Hz), so per-tick
+    // stats (possession, distance) are sampled at 60 Hz, not 100 Hz.
+    // This is accurate enough for gameplay stats; do NOT move it into the
+    // 100 Hz loop without also updating currentState_ there.
+    const int simTicksPerSec = 100;
+    const int stateUpdateHz = 60;
     const auto framePeriod = std::chrono::microseconds(1'000'000 / simTicksPerSec);
     int broadcastHz = std::min(cfg_.broadcastRateHz, simTicksPerSec);
     if (broadcastHz < 1) broadcastHz = 1;
     const int broadcastSkip = std::max(1, simTicksPerSec / broadcastHz);
     const int tacticalSkip = std::max(1, simTicksPerSec / 10);
+    int stateTickAccumulator = 0;
 
     while (running_) {
         if (cfg_.shutdownFlag && !*(cfg_.shutdownFlag)) {
@@ -429,17 +402,20 @@ void Server::run() {
         }
         auto frameStart = std::chrono::steady_clock::now();
 
+        // 1. Physics step at 100 Hz
         try {
-            tick();
+            applyPendingInputs();
+            gameEnv_->step();
+            ++tickCounter_;
         } catch (const std::exception& e) {
-            std::cerr << "[GameServer] Exception in tick(): " << e.what() << std::endl;
+            std::cerr << "[GameServer] Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
                 cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
             running_ = false;
             break;
         } catch (...) {
-            std::cerr << "[GameServer] Unknown exception in tick()" << std::endl;
+            std::cerr << "[GameServer] Unknown exception in step()" << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
                 cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
@@ -447,6 +423,30 @@ void Server::run() {
             break;
         }
 
+        // 2. State update at 60 Hz (accumulator: 60/100 ratio)
+        stateTickAccumulator += stateUpdateHz;
+        if (stateTickAccumulator >= simTicksPerSec) {
+            stateTickAccumulator -= simTicksPerSec;
+            try {
+                updateState();
+            } catch (const std::exception& e) {
+                std::cerr << "[GameServer] Exception in updateState(): " << e.what() << std::endl;
+                if (cfg_.redis && cfg_.redis->isConfigured()) {
+                    cfg_.redis->publish("gf.crashed", cfg_.roomId);
+                }
+                running_ = false;
+                break;
+            } catch (...) {
+                std::cerr << "[GameServer] Unknown exception in updateState()" << std::endl;
+                if (cfg_.redis && cfg_.redis->isConfigured()) {
+                    cfg_.redis->publish("gf.crashed", cfg_.roomId);
+                }
+                running_ = false;
+                break;
+            }
+        }
+
+        // 3. Broadcast at 20 Hz (or cfg_.broadcastRateHz)
         if (tickCounter_ % broadcastSkip == 0) {
             broadcastGameState();
         }
@@ -455,8 +455,8 @@ void Server::run() {
             broadcastTacticalState();
         }
 
-        // 1 Hz heartbeat (every 60 ticks)
-        if (tickCounter_ % 60 == 0 && cfg_.redis && cfg_.redis->isConfigured()) {
+        // 4. 1 Hz heartbeat (every 100 ticks)
+        if (tickCounter_ % simTicksPerSec == 0 && cfg_.redis && cfg_.redis->isConfigured()) {
             auto now = std::chrono::system_clock::now().time_since_epoch();
             auto sec = std::chrono::duration_cast<std::chrono::seconds>(now).count();
             cfg_.redis->hset("gf.heartbeat", cfg_.roomId, std::to_string(sec));
@@ -477,21 +477,17 @@ void Server::run() {
     gameEnv_ = nullptr;
 }
 
-void Server::tick() {
-    ++tickCounter_;
+void Server::updateState() {
     currentState_.tick = tickCounter_;
-    if (tickCounter_ % 60 == 0) {
+    if (tickCounter_ % 100 == 0) {
         std::cout << "[GameServer] tick " << tickCounter_ << " timer=" << currentState_.timer << "s" << std::endl;
     }
-    // 60 env-steps/s -> each tick = 16.666... ms wall time
-    const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(kSimFrequencyHz);
+    // 100 env-steps/s -> each tick = 10 ms wall time
+    const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(dzfoot::kSimFrequencyHz);
     currentState_.timestampUs = baseTimestampUs_ + static_cast<uint64_t>(tickCounter_) * usPerTick;
-    currentState_.timer = tickCounter_ * (1.0f / static_cast<float>(kSimFrequencyHz));
+    currentState_.timer = tickCounter_ * (1.0f / static_cast<float>(dzfoot::kSimFrequencyHz));
 
     if (gameEnv_) {
-        applyPendingInputs();
-        gameEnv_->step();
-
         auto info = gameEnv_->get_info();
 
         // --- Ball state ---
@@ -510,10 +506,11 @@ void Server::tick() {
             if (ball) {
                 Vector3 mov = ball->GetMovement();
                 Vector3 rot = ball->GetRotation();
-                // Velocity: internal units per tick -> env coords per tick
-                currentState_.ball.vel[0] = mov.coords[0] / X_FIELD_SCALE;
-                currentState_.ball.vel[1] = mov.coords[1] / Y_FIELD_SCALE;
-                currentState_.ball.vel[2] = mov.coords[2] / Z_FIELD_SCALE;
+                // Velocity: internal units per physics tick -> env coords per SECOND
+                // Client DeadReckoning expects m/s (or env-units/s), not per-tick.
+                currentState_.ball.vel[0] = (mov.coords[0] / X_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
+                currentState_.ball.vel[1] = (mov.coords[1] / Y_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
+                currentState_.ball.vel[2] = (mov.coords[2] / Z_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
                 currentState_.ball.rot[0] = rot.coords[0];
                 currentState_.ball.rot[1] = rot.coords[1];
                 currentState_.ball.rot[2] = rot.coords[2];
@@ -639,8 +636,8 @@ void Server::tick() {
             }
         }
 
-        // Log every 60 ticks (1 second at 60Hz) for debugging
-        if (tickCounter_ % 60 == 0) {
+        // Log every 100 ticks (1 second at 100Hz) for debugging
+        if (tickCounter_ % 100 == 0) {
             std::cout << "[GameServer::tick] tick=" << tickCounter_
                       << " mode=" << static_cast<int>(info.game_mode)
                       << " in_play=" << (info.is_in_play ? 1 : 0)
@@ -736,7 +733,7 @@ void Server::tick() {
 
                 // Offside detection: transition from no offside to offside
                 bool isOffside = referee->HasOffsidePlayers();
-                if (isOffside && !wasOffside_ && (tickCounter_ - lastOffsideTick_ > 60)) {
+                if (isOffside && !wasOffside_ && (tickCounter_ - lastOffsideTick_ > 100)) {
                     Player* offPlayer = referee->GetFirstOffsidePlayer();
                     if (offPlayer) {
                         // Find player index in our state arrays
@@ -812,10 +809,10 @@ void Server::tick() {
             eventQueue_.push_back(ev);
             stats_.goals[0]++;
             lastScoreA_ = info.left_goals;
-            // Force celebration on scorer (~3 seconds at 60Hz)
+            // Force celebration on scorer (~3 seconds at 100Hz)
             int scorerIdx = info.ball_owned_player;
             if (scorerIdx >= 0 && scorerIdx < 11) {
-                celebrationExpiryTick_[scorerIdx] = tickCounter_ + 180; // 3 sec
+                celebrationExpiryTick_[scorerIdx] = tickCounter_ + 300; // 3 sec
             }
         }
         if (info.right_goals > lastScoreB_) {
@@ -833,10 +830,10 @@ void Server::tick() {
             eventQueue_.push_back(ev);
             stats_.goals[1]++;
             lastScoreB_ = info.right_goals;
-            // Force celebration on scorer (~3 seconds at 60Hz)
+            // Force celebration on scorer (~3 seconds at 100Hz)
             int scorerIdx = info.ball_owned_player;
             if (scorerIdx >= 0 && scorerIdx < 11) {
-                celebrationExpiryTick_[11 + scorerIdx] = tickCounter_ + 180; // 3 sec
+                celebrationExpiryTick_[11 + scorerIdx] = tickCounter_ + 300; // 3 sec
             }
         }
 
@@ -1147,12 +1144,7 @@ void Server::updateTacticalState() {
 
 void Server::broadcastTacticalState() {
     bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
-#ifdef USE_LIVEKIT
-    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
-#else
-    bool hasLiveKit = false;
-#endif
-    if (!hasRedis && !hasLiveKit) return;
+    if (!hasRedis) return;
 
     tacticalState_.header.magic = dzfoot::DZ_MAGIC;
     tacticalState_.header.version = dzfoot::DZ_PROTOCOL_VERSION;
@@ -1161,27 +1153,15 @@ void Server::broadcastTacticalState() {
     tacticalState_.header.flags = 0;
     auto roomBytes = cfg_.roomId.substr(0, 36);
 
-    if (hasRedis) {
-        std::vector<uint8_t> buf(36 + sizeof(tacticalState_));
-        std::memcpy(buf.data(), roomBytes.c_str(), roomBytes.size());
-        std::memcpy(buf.data() + 36, &tacticalState_, sizeof(tacticalState_));
-        cfg_.redis->publishBinary("gf.tactical", buf.data(), buf.size());
-    }
-#ifdef USE_LIVEKIT
-    if (hasLiveKit) {
-        livekitBridge_->publishData(reinterpret_cast<const uint8_t*>(&tacticalState_), sizeof(tacticalState_), "tac", false);
-    }
-#endif
+    std::vector<uint8_t> buf(36 + sizeof(tacticalState_));
+    std::memcpy(buf.data(), roomBytes.c_str(), roomBytes.size());
+    std::memcpy(buf.data() + 36, &tacticalState_, sizeof(tacticalState_));
+    cfg_.redis->publishBinary("gf.tactical", buf.data(), buf.size());
 }
 
 void Server::broadcastGameState() {
     bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
-#ifdef USE_LIVEKIT
-    bool hasLiveKit = livekitBridge_ && livekitBridge_->isReadyForData();
-#else
-    bool hasLiveKit = false;
-#endif
-    if (!hasRedis && !hasLiveKit) return;
+    if (!hasRedis) return;
 
     // Fill protocol header before broadcast
     currentState_.header.magic   = dzfoot::DZ_MAGIC;
@@ -1192,18 +1172,11 @@ void Server::broadcastGameState() {
 
     auto roomBytes = cfg_.roomId.substr(0, 36);
 
-    if (hasRedis) {
-        // Prefix room_id (36 bytes) for backend routing
-        std::vector<uint8_t> gsBuf(36 + sizeof(currentState_));
-        std::memcpy(gsBuf.data(), roomBytes.c_str(), roomBytes.size());
-        std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
-        cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
-    }
-#ifdef USE_LIVEKIT
-    if (hasLiveKit) {
-        livekitBridge_->publishData(reinterpret_cast<const uint8_t*>(&currentState_), sizeof(currentState_), "gs", false);
-    }
-#endif
+    // Prefix room_id (36 bytes) for backend routing
+    std::vector<uint8_t> gsBuf(36 + sizeof(currentState_));
+    std::memcpy(gsBuf.data(), roomBytes.c_str(), roomBytes.size());
+    std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
+    cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
 
     for (auto& ev : eventQueue_) {
         ev.header.magic   = dzfoot::DZ_MAGIC;
@@ -1214,29 +1187,29 @@ void Server::broadcastGameState() {
         std::vector<uint8_t> evBuf(36 + sizeof(ev));
         std::memcpy(evBuf.data(), roomBytes.c_str(), roomBytes.size());
         std::memcpy(evBuf.data() + 36, &ev, sizeof(ev));
-        if (hasRedis) {
-            cfg_.redis->publishBinary("gf.event", evBuf.data(), evBuf.size());
-        }
-#ifdef USE_LIVEKIT
-        if (hasLiveKit) {
-            livekitBridge_->publishData(evBuf.data() + 36, sizeof(ev), "ev", true);
-        }
-#endif
+        cfg_.redis->publishBinary("gf.event", evBuf.data(), evBuf.size());
     }
     eventQueue_.clear();
 }
 
 void Server::receiveInput(const PlayerInputPacket& input) {
     std::lock_guard<std::mutex> lock(inputMutex_);
+    if (inputQueue_.size() >= 64) {
+        inputQueue_.pop(); // drop oldest to prevent memory flood
+    }
     inputQueue_.push(input);
 }
 
 void Server::processInputs() {
-    // Applied in tick() via applyPendingInputs()
+    // Applied in run() loop via applyPendingInputs()
 }
 
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
+
+    // Reset all controller states before applying new inputs.
+    // This prevents "sticky" inputs when a client stops sending packets.
+    gameEnv_->reset_inputs();
 
     std::lock_guard<std::mutex> lock(inputMutex_);
     while (!inputQueue_.empty()) {
@@ -1372,14 +1345,14 @@ void Server::accumulateStats() {
                     case e_FunctionType_Shot:
                         stats_.shots[t]++;
                         // Mark a pending shot: resolved by goal or keeper save within ~6s.
-                        pendingShotExpiryTick_[idx] = static_cast<int>(tickCounter_) + 60;
+                        pendingShotExpiryTick_[idx] = static_cast<int>(tickCounter_) + 100;
                         break;
                     case e_FunctionType_ShortPass:
                     case e_FunctionType_LongPass:
                     case e_FunctionType_HighPass:
                         stats_.passes[t]++;
-                        // Pending pass resolved if same team owns ball within ~3s, different player.
-                        pendingPassExpiryTick_[idx] = static_cast<int>(tickCounter_) + 30;
+                        // Pending pass resolved if same team owns ball within ~0.5s, different player.
+                        pendingPassExpiryTick_[idx] = static_cast<int>(tickCounter_) + 50;
                         pendingPassPlayerIdx_[idx] = static_cast<int>(i);
                         break;
                     case e_FunctionType_Sliding:
@@ -1404,7 +1377,7 @@ void Server::accumulateStats() {
 
             // Resolve pending shot: opposing keeper Catch/Deflect counts as on-target.
             // Goals scored after a shot are also counted as on-target via the goal-event
-            // detection in tick() which calls noteShotOnTarget() (see below).
+            // detection in updateState() which calls noteShotOnTarget() (see below).
             if (pendingShotExpiryTick_[idx] > 0) {
                 bool onTarget = false;
                 Team* opp = match->GetTeam(1 - t);
@@ -1429,7 +1402,7 @@ void Server::accumulateStats() {
 }
 
 void Server::detectEvents() {
-    // Events are handled directly in tick()
+    // Events are handled directly in updateState()
 }
 
 void Server::postMatchResult(const std::string& statsUrl) {

@@ -25,6 +25,13 @@ namespace blunted {
   }
 
   void GraphicsSystem::Initialize(const Properties &config) {
+    bool doRender = config.GetBool("render", true);
+    int w = config.GetInt("context_x", 1280);
+    int h = config.GetInt("context_y", 720);
+    Initialize(doRender, w, h);
+  }
+
+  void GraphicsSystem::Initialize(bool render, int width, int height) {
 
     textureResourceManager = boost::shared_ptr < ResourceManager<Texture> > (new ResourceManager<Texture>("texture"));
     vertexBufferResourceManager = boost::shared_ptr < ResourceManager<VertexBuffer> > (new ResourceManager<VertexBuffer>("vertexbuffer"));
@@ -32,16 +39,15 @@ namespace blunted {
     ResourceManagerPool::GetInstance().RegisterManager(e_ResourceType_VertexBuffer, vertexBufferResourceManager);
 
     // start thread for renderer
-    bool doRender = config.GetBool("render", true);
-    if (!doRender) {
+    if (!render) {
       renderer3DTask = new MockRenderer3D();
-    } else if (config.Get("graphics3d_renderer", "opengl") == "opengl") {
+    } else {
       renderer3DTask = new OpenGLRenderer3D();
     }
-    width = config.GetInt("context_x", 1280);
-    height = config.GetInt("context_y", 720);
-    bpp = config.GetInt("context_bpp", 32);
-    bool fullscreen = config.GetBool("context_fullscreen", false);
+    this->width = width;
+    this->height = height;
+    bpp = 32;
+    bool fullscreen = false;
     renderer3DTask->Run();
 
     boost::intrusive_ptr<Renderer3DMessage_CreateContext> createContext(new Renderer3DMessage_CreateContext(width, height, bpp, fullscreen));
@@ -55,16 +61,20 @@ namespace blunted {
     }
 
     task = new GraphicsTask(this);
-    task->Run();
+    if (render) {
+      task->Run();
+    }
   }
 
   void GraphicsSystem::Exit() {
-    // shutdown system task
-    boost::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
-    task->messageQueue.PushMessage(shutdown);
-    shutdown->Wait();
+    // shutdown system task (only if it was started)
+    if (task && task->thread.joinable()) {
+      boost::intrusive_ptr<Message_Shutdown> shutdown(new Message_Shutdown());
+      task->messageQueue.PushMessage(shutdown);
+      shutdown->Wait();
 
-    task->Join();
+      task->Join();
+    }
     delete task;
     task = NULL;
 

@@ -20,6 +20,8 @@
 
 Ball::Ball(Match *match) : match(match) {
 
+  std::cout << "[Ball] constructor START" << std::endl;
+
   bounce = 0.62f; // 1 = full bounce, 0 = no bounce
   linearBounce = 0.06f; // bigger = more brake force
   drag = 0.015f;//previously 0.025f; // bigger = more
@@ -30,20 +32,32 @@ Ball::Ball(Match *match) : match(match) {
 
   ballTouchesNet = false;
 
+  std::cout << "[Ball] before GetScene3D" << std::endl;
   scene3D = GetScene3D();
+  std::cout << "[Ball] after GetScene3D" << std::endl;
 
+  std::cout << "[Ball] before Log Loading ball object" << std::endl;
   Log(e_Notice, "Ball", "Ball", "Loading ball object");
+  std::cout << "[Ball] after Log Loading ball object" << std::endl;
 
+  std::cout << "[Ball] before ObjectLoader" << std::endl;
   ObjectLoader loader;
+  std::cout << "[Ball] before LoadObject generic.object" << std::endl;
   ballNode = loader.LoadObject(scene3D, "media/objects/balls/generic.object");
+  std::cout << "[Ball] after LoadObject generic.object" << std::endl;
+  std::cout << "[Ball] before AddNode ballNode" << std::endl;
   match->GetDynamicNode()->AddNode(ballNode);
+  std::cout << "[Ball] after AddNode ballNode" << std::endl;
 
+  std::cout << "[Ball] before GetObjects geometry" << std::endl;
   std::list < boost::intrusive_ptr<Geometry> > children;
   ballNode->GetObjects<Geometry>(e_ObjectType_Geometry, children);
   ball = (*children.begin());
+  std::cout << "[Ball] after GetObjects geometry" << std::endl;
 
-
+  std::cout << "[Ball] before Log Loading ball sounds" << std::endl;
   Log(e_Notice, "Ball", "Ball", "Loading ball sounds");
+  std::cout << "[Ball] after Log Loading ball sounds" << std::endl;
 
 
   // ball sound

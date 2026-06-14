@@ -24,8 +24,8 @@ void GameEnv::start_game() {
   dzfootEnv_ = new DZFootEnv();
   dzfootEnv_->Initialize(1280, 720);
 
-  // Start match with default team DB IDs (0 vs 1)
-  dzfootEnv_->StartMatch(0, 1);
+  // Start match with default team DB IDs (1 vs 2)
+  dzfootEnv_->StartMatch(1, 2);
 
   // Expose gameTask for GameServer.cpp direct access
   context = new GameContext();
@@ -87,6 +87,10 @@ SharedInfo GameEnv::get_info() {
   }
 
   return info;
+}
+
+void GameEnv::reset_inputs() {
+  if (dzfootEnv_) dzfootEnv_->ResetInputs();
 }
 
 void GameEnv::apply_formations() {

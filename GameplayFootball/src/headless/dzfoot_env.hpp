@@ -1,5 +1,5 @@
-// DZFoot Headless Environment — wraps vi3itor engine for 60Hz server simulation
-// Replaces Google Brain's game_env.hpp with vi3itor-compatible architecture
+// DZFoot Headless Environment — wraps vi3itor engine for 100Hz server simulation
+// Inspired by Google Brain's headless design (MockRenderer3D), but without RL/mirroring.
 
 #ifndef _DZFOOT_ENV_HPP
 #define _DZFOOT_ENV_HPP
@@ -55,7 +55,7 @@ class DZFootEnv {
   // Start a match with given team database IDs
   void StartMatch(int team1DbID, int team2DbID);
 
-  // Advance one simulation tick (60Hz = one call per ~16.67ms)
+  // Advance one simulation tick (100 Hz = one call per 10 ms)
   void Step();
 
   // Set controller input for a player

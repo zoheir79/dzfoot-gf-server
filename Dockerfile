@@ -36,16 +36,14 @@ RUN apt-get update && apt-get install -y \
     fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+WORKDIR /app/data
 COPY --from=builder /build/build/gf_server /usr/local/bin/gf_server
 COPY --from=builder /build/build/GF_build/libgame.so /usr/local/lib/
 COPY --from=builder /build/GameplayFootball/data /app/data
 RUN ldconfig
 
-# GF server communicates via Redis by default.
-# Game states are published to Redis; backend session service forwards to LiveKit.
+# gf_server communicates via Redis only.
+# Game states are published to Redis; backend session bot forwards to LiveKit.
 # Player inputs are received via Redis subscription.
-# Optional: build with -DUSE_LIVEKIT=ON to publish directly to LiveKit (requires libdatachannel).
-#   When enabled, pass --livekit-url=... and --livekit-token=... to gf_server.
 
 ENTRYPOINT ["gf_server"]
