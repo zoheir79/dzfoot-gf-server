@@ -7,6 +7,7 @@
 #include "base/log.hpp"
 
 #include <fstream>
+#include <cstring>
 
 namespace blunted {
 
@@ -26,7 +27,16 @@ namespace blunted {
     FILE *f;
     f = fopen(filename.c_str(), "rb");
     if (!f) {
-      Log(e_FatalError, "WAVLoader", "Load", "Could not load " + filename + ": file not found");
+      Log(e_Warning, "WAVLoader", "Load", "Could not load " + filename + ", using silent placeholder");
+      WavData *data = new WavData();
+      data->data = new unsigned char[4];
+      memset(data->data, 0, 4);
+      data->size = 4;
+      data->channels = 1;
+      data->bits = 8;
+      data->frequency = 22050;
+      resource->GetResource()->SetData(data);
+      return;
     }
 
     unsigned char *buf;

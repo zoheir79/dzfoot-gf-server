@@ -9,6 +9,8 @@
 #include "math/vector3.hpp"
 #include "math/quaternion.hpp"
 
+#include <iostream>
+
 namespace blunted {
 
   s_treeentry::~s_treeentry() {
@@ -22,13 +24,16 @@ namespace blunted {
   // ----- load .ase file into a tree
 
   s_tree *tree_load(const std::string asefile) {
+    std::cout << "[tree_load] opening: " << asefile << std::endl;
     std::ifstream datafile(asefile.c_str(), std::ios::in);
     if (datafile.fail()) {
       Log(e_FatalError, "tree_load", "", "could not open " + asefile);
       return NULL;
     }
+    std::cout << "[tree_load] file opened OK, reading blocks ..." << std::endl;
 
     s_tree *tree = tree_readblock(datafile);
+    std::cout << "[tree_load] tree_readblock done, blocks=" << tree->entries.size() << std::endl;
 
     datafile.close();
 
@@ -143,13 +148,17 @@ namespace blunted {
   }
 
   std::string file_to_string(std::string filename) {
+    std::cout << "[file_to_string] opening: " << filename << std::endl;
 
     char line[1024];
     std::ifstream file;
 
     file.open(filename.c_str(), std::ios::in);
 
-    if (file.fail()) Log(e_FatalError, "utils", "file_to_vector", "file not found or empty: " + filename);
+    if (file.fail()) {
+      Log(e_FatalError, "utils", "file_to_vector", "file not found or empty: " + filename);
+      return "";
+    }
 
     std::string source;
     while (file.getline(line, 1024)) {
@@ -160,6 +169,7 @@ namespace blunted {
     source.erase( std::remove(source.begin(), source.end(), '\r'), source.end() );
 
     file.close();
+    std::cout << "[file_to_string] read " << source.size() << " bytes from " << filename << std::endl;
 
     return source;
   }

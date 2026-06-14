@@ -13,6 +13,8 @@
 #include "managers/resourcemanagerpool.hpp"
 #include "scene/objectfactory.hpp"
 
+#include <iostream>
+
 namespace blunted {
 
   ObjectLoader::ObjectLoader() {
@@ -70,13 +72,24 @@ namespace blunted {
   }
 
   boost::intrusive_ptr<Node> ObjectLoader::LoadObject(boost::shared_ptr<Scene3D> scene3D, const std::string &filename, const Vector3 &offset) const {
+    std::cout << "[ObjectLoader::LoadObject] loading XML: " << filename << std::endl;
 
     XMLLoader loader;
     const XMLTree objectTree = loader.LoadFile(filename);
+    std::cout << "[ObjectLoader::LoadObject] XML loaded, children=" << objectTree.children.size() << std::endl;
+
+    if (objectTree.children.empty()) {
+      std::cout << "[ObjectLoader::LoadObject] ERROR: empty XML tree!" << std::endl;
+      return boost::intrusive_ptr<Node>();
+    }
+
+    map_XMLTree::const_iterator firstChild = objectTree.children.begin();
+    std::cout << "[ObjectLoader::LoadObject] first child tag=" << firstChild->first << std::endl;
     // printf("\n\n");
     // loader.PrintTree(objectTree);
     // printf("\n\n");
-    boost::intrusive_ptr<Node> result = LoadObjectImpl(scene3D, filename, objectTree.children.begin()->second, offset);
+    boost::intrusive_ptr<Node> result = LoadObjectImpl(scene3D, filename, firstChild->second, offset);
+    std::cout << "[ObjectLoader::LoadObject] LoadObjectImpl done" << std::endl;
     // printf("\n\n");
     // result->PrintTree();
     // printf("\n\n");
@@ -130,6 +143,7 @@ namespace blunted {
       // GEOMETRY
 
       else if (objectIter->first == "geometry") {
+        std::cout << "[LoadObjectImpl] processing geometry node" << std::endl;
 
         objectType = e_ObjectType_Geometry;
 
@@ -144,7 +158,7 @@ namespace blunted {
 
           if (iter->first == "filename") {
             aseFilename = iter->second.value;
-            //printf("geom file: %s\n", aseFilename.c_str());
+            std::cout << "[LoadObjectImpl] geometry filename=" << aseFilename << std::endl;
           }
           if (iter->first == "name") {
             objectName = iter->second.value;
@@ -165,17 +179,23 @@ namespace blunted {
 
           iter++;
         }
+        std::cout << "[LoadObjectImpl] Fetching geometry: " << (dirpart + aseFilename) << std::endl;
         boost::intrusive_ptr < Resource<GeometryData> > geometry = ResourceManagerPool::GetInstance().GetManager<GeometryData>(e_ResourceType_GeometryData)->Fetch(dirpart + aseFilename, true);
+        std::cout << "[LoadObjectImpl] geometry fetched" << std::endl;
         boost::intrusive_ptr<Geometry> object = static_pointer_cast<Geometry>(ObjectFactory::GetInstance().CreateObject(objectName, objectType));
+        std::cout << "[LoadObjectImpl] object created" << std::endl;
         if (properties.GetBool("dynamic")) geometry->GetResource()->SetDynamic(true);
 
         object->SetProperties(properties);
+        std::cout << "[LoadObjectImpl] before CreateSystemObjects" << std::endl;
         scene3D->CreateSystemObjects(object);
+        std::cout << "[LoadObjectImpl] after CreateSystemObjects" << std::endl;
         object->SetLocalMode(localMode);
         object->SetPosition(position);
         object->SetRotation(rotation);
         object->SetGeometryData(geometry);
         objNode->AddObject(object);
+        std::cout << "[LoadObjectImpl] geometry object added to node" << std::endl;
       }
 
 

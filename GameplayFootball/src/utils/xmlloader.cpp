@@ -7,6 +7,8 @@
 #include "base/utils.hpp"
 #include "base/log.hpp"
 
+#include <iostream>
+
 namespace blunted {
 
   XMLLoader::XMLLoader() {
@@ -17,11 +19,15 @@ namespace blunted {
 
 
   XMLTree XMLLoader::LoadFile(const std::string &filename) {
+    std::cout << "[XMLLoader::LoadFile] calling file_to_string for: " << filename << std::endl;
     std::string source;
     source = file_to_string(filename);
+    std::cout << "[XMLLoader::LoadFile] file_to_string returned " << source.size() << " bytes" << std::endl;
 
     XMLTree tree;
+    std::cout << "[XMLLoader::LoadFile] calling BuildTree ..." << std::endl;
     BuildTree(tree, source);
+    std::cout << "[XMLLoader::LoadFile] BuildTree done, children=" << tree.children.size() << std::endl;
 
     return tree;
   }

@@ -116,6 +116,7 @@ namespace blunted {
     imageLoader = new ImageLoader();
     surfaceResourceManager->RegisterLoader("jpg", imageLoader);
     surfaceResourceManager->RegisterLoader("png", imageLoader);
+    surfaceResourceManager->RegisterLoader("bmp", imageLoader);
     wavLoader = new WAVLoader();
     soundBufferResourceManager->RegisterLoader("wav", wavLoader);
 

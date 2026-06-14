@@ -385,7 +385,7 @@ void CreateChunk(int i, int resX, int resY, int resSpecularX, int resSpecularY, 
 
 void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int resNormalX, int resNormalY) {
 
-  SDL_Surface *seamless = IMG_Load("media/textures/pitch/seamlessgrass08.png");
+  SDL_Surface *seamless = IMG_Load("media/textures/pitch/seamlessgrass08.bmp");
   SDL_PixelFormat seamlessFormat = *seamless->format;
   seamlessTexW = seamless->w;
   seamlessTexH = seamless->h;
@@ -400,7 +400,7 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY, int r
   }
   SDL_FreeSurface(seamless);
 
-  SDL_Surface *overlay = IMG_Load("media/textures/pitch/overlay.png");
+  SDL_Surface *overlay = IMG_Load("media/textures/pitch/overlay.bmp");
   SDL_PixelFormat overlayFormat = *overlay->format;
   overlayTexW = overlay->w;
   overlayTexH = overlay->h;

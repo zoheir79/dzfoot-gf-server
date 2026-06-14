@@ -12,6 +12,7 @@
 #include "managers/resourcemanagerpool.hpp"
 
 #include <fstream>
+#include <iostream>
 
 namespace blunted {
 
@@ -26,9 +27,16 @@ namespace blunted {
 
   // load file into resource
   void ASELoader::Load(std::string filename, boost::intrusive_ptr < Resource <GeometryData> > resource) {
+    std::cout << "[ASELoader::Load] loading: " << filename << std::endl;
     triangleCount = 0;
     s_tree *data = tree_load(filename);
+    if (!data) {
+      std::cout << "[ASELoader::Load] ERROR: tree_load returned NULL for " << filename << std::endl;
+      return;
+    }
+    std::cout << "[ASELoader::Load] tree_load OK, calling Build ..." << std::endl;
     Build(data, resource);
+    std::cout << "[ASELoader::Load] Build done" << std::endl;
     delete data;
     //printf("%s: %i total triangles\n", filename.c_str(), triangleCount);
   }
