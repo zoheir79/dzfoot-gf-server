@@ -155,12 +155,9 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
     return;
   }
 
-  std::cout << "[DZF] StartMatch: creating MatchData for teams " << team1DbID << " vs " << team2DbID << std::endl;
   // Create match data
   MatchData *matchData = new MatchData(team1DbID, team2DbID);
-  std::cout << "[DZF] StartMatch: MatchData created" << std::endl;
   menuTask->SetMatchData(matchData);
-  std::cout << "[DZF] StartMatch: MatchData set on MenuTask" << std::endl;
 
   // Set controller setup: first 11 controllers = team 0, next 11 = team 1
   std::vector<SideSelection> setup;
@@ -171,18 +168,17 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
     SideSelection s; s.controllerID = i + playerNum; s.side = 1; setup.push_back(s);
   }
   menuTask->SetControllerSetup(setup);
-  std::cout << "[DZF] StartMatch: controller setup done (22 controllers)" << std::endl;
 
   // Start the match
-  std::cout << "[DZF] StartMatch: calling gameTask->Action(StartMatch) ..." << std::endl;
   gameTask->Action(e_GameTaskMessage_StartMatch);
-  std::cout << "[DZF] StartMatch: gameTask->Action returned OK" << std::endl;
   matchRunning_ = true;
   step_ = 0;
 }
 
 void DZFootEnv::Step() {
-  if (!matchRunning_) return;
+  if (!matchRunning_) {
+    return;
+  }
 
   // === GameSequence (sequential headless tick) ===
   // NOTE: menuTask phases are intentionally skipped — the MenuTask

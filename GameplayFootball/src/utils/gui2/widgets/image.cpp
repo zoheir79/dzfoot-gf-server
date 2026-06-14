@@ -19,6 +19,8 @@
 
 #include "../windowmanager.hpp"
 
+#include "base/log.hpp"
+
 #include "SDL2/SDL2_rotozoom.h"
 
 namespace blunted {
@@ -38,12 +40,23 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
 
   void Gui2Image::LoadImage(const std::string &filename) {
     SDL_Surface *imageSurfTmp = IMG_Load(filename.c_str());
-    imageSource = windowManager->CreateImage2D(name + "source", imageSurfTmp->w, imageSurfTmp->h, false);
+    if (!imageSurfTmp) {
+      Log(e_Warning, "Gui2Image", "LoadImage", "Could not load " + filename + ", using 1x1 black placeholder");
+      imageSurfTmp = SDL_CreateRGBSurface(0, 1, 1, 32, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000);
+      if (imageSurfTmp) {
+        SDL_FillRect(imageSurfTmp, NULL, SDL_MapRGBA(imageSurfTmp->format, 0, 0, 0, 255));
+      }
+    }
+    int w = imageSurfTmp ? imageSurfTmp->w : 1;
+    int h = imageSurfTmp ? imageSurfTmp->h : 1;
+    imageSource = windowManager->CreateImage2D(name + "source", w, h, false);
 
-    boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
-    surfaceRes->resourceMutex.lock();
-    surfaceRes->GetResource()->SetData(imageSurfTmp);
-    surfaceRes->resourceMutex.unlock();
+    if (imageSurfTmp) {
+      boost::intrusive_ptr < Resource<Surface> > surfaceRes = imageSource->GetImage();
+      surfaceRes->resourceMutex.lock();
+      surfaceRes->GetResource()->SetData(imageSurfTmp);
+      surfaceRes->resourceMutex.unlock();
+    }
 
     Redraw();
   }
@@ -58,6 +71,10 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
       surfaceRes->resourceMutex.lock();
 
       SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
+      if (!imageSurfTmp || imageSurfTmp->w == 0 || imageSurfTmp->h == 0) {
+        surfaceRes->resourceMutex.unlock();
+        return;
+      }
 
       int x, y, w, h;
       windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);
@@ -109,6 +126,10 @@ Gui2Image::Gui2Image(Gui2WindowManager *windowManager, const std::string &name,
       surfaceRes->resourceMutex.lock();
 
       SDL_Surface *imageSurfTmp = surfaceRes->GetResource()->GetData();
+      if (!imageSurfTmp || imageSurfTmp->w == 0 || imageSurfTmp->h == 0) {
+        surfaceRes->resourceMutex.unlock();
+        return;
+      }
 
       int x, y, w, h;
       windowManager->GetCoordinates(x_percent, y_percent, width_percent, height_percent, x, y, w, h);

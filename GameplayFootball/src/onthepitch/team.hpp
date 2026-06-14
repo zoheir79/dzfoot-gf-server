@@ -86,7 +86,12 @@ class Team {
     Player *GetGoalie();
 
     void SetKitNumber(int num);
-    Player *MainSelectedPlayer() { return nullptr; }  // DZFoot: no human selection in headless
+    Player *MainSelectedPlayer() {
+      if (!humanGamers.empty()) {
+        return humanGamers.at(0)->GetSelectedPlayer();
+      }
+      return nullptr;
+    }
 
   protected:
     int id;

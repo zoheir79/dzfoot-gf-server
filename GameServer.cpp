@@ -216,12 +216,9 @@ void Server::sendMatchSetup() {
     std::memcpy(setupBuf.data() + 36, &setup, sizeof(setup));
     cfg_.redis->publishBinary("gf.setup", setupBuf.data(), setupBuf.size());
     matchSetupSent_ = true;
-    std::cout << "[GameServer] MatchSetup broadcast (" << sizeof(setup) << " bytes)" << std::endl;
 }
 
 void Server::run() {
-    std::cout << "[GameServer] Room " << cfg_.roomId << " starting (" << cfg_.duration << "s)" << std::endl;
-
     if (std::getenv("GFOOTBALL_DATA_DIR") == nullptr) {
         setenv("GFOOTBALL_DATA_DIR", "/app/data", 1);
     }
@@ -256,14 +253,12 @@ void Server::run() {
     if (!cfg_.matchConfigJson.empty()) {
         if (MatchConfig::loadString(cfg_.matchConfigJson, mcfg)) {
             hasCustomConfig = true;
-            std::cout << "[GameServer] Loaded custom match config from JSON string" << std::endl;
         } else {
             std::cerr << "[GameServer] Failed to load match config from JSON string" << std::endl;
         }
     } else if (!cfg_.matchConfigPath.empty()) {
         if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
             hasCustomConfig = true;
-            std::cout << "[GameServer] Loaded custom match config from file: " << cfg_.matchConfigPath << std::endl;
         } else {
             std::cerr << "[GameServer] Failed to load match config from file" << std::endl;
         }
@@ -278,9 +273,6 @@ void Server::run() {
         if (!mcfg.right_team.formation.empty()) {
             sc.right_team = buildFormation(mcfg.right_team);
         }
-        std::cout << "[GameServer] Custom formation applied ("
-                  << sc.left_team.size() << " left, "
-                  << sc.right_team.size() << " right players)" << std::endl;
     }
 
     // Pre-fill default 4-3-3 formations (avoids empty-team crash)
@@ -291,8 +283,6 @@ void Server::run() {
 
     gameEnv_->start_game();
 
-    std::cout << "[GameServer] GF engine started (headless)" << std::endl;
-
     // Warm up: a few env steps so Match initialises player data fully.
     for (int i = 0; i < 5; ++i) {
         gameEnv_->step();
@@ -301,12 +291,10 @@ void Server::run() {
     // Apply formations (custom or default 4-3-3) to the live match.
     // Must happen after warm-up so Match/Team objects exist.
     gameEnv_->apply_formations();
-    std::cout << "[GameServer] Formations applied to live match" << std::endl;
 
     // Inject custom player skills from match config into GF PlayerData
     if (hasCustomConfig) {
         if (!mcfg.left_team.players.empty() || !mcfg.right_team.players.empty()) {
-            std::cout << "[GameServer] Injecting custom player skills into GF engine" << std::endl;
         }
         if (gameEnv_ && gameEnv_->context && gameEnv_->context->gameTask) {
             Match* match = gameEnv_->context->gameTask->GetMatch();
@@ -339,13 +327,10 @@ void Server::run() {
                                           << "' for player " << profile.name << std::endl;
                             }
                         }
-                        std::cout << "[GameServer] Skills injected for " << profile.name
-                                  << " (team " << teamIdx << ", slot " << i << ")" << std::endl;
                     }
                 };
                 applyTeamSkills(0, mcfg.left_team);
                 applyTeamSkills(1, mcfg.right_team);
-                std::cout << "[GameServer] Custom player skills applied to both teams" << std::endl;
             }
         }
 
@@ -372,6 +357,8 @@ void Server::run() {
         cfg_.redis->publish("gf.ready", cfg_.roomId);
     }
 
+    std::cout << "[GameServer] Match simulation successfully started. Running silently..." << std::endl;
+
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -396,7 +383,6 @@ void Server::run() {
 
     while (running_) {
         if (cfg_.shutdownFlag && !*(cfg_.shutdownFlag)) {
-            std::cout << "[GameServer] Shutdown requested, stopping loop" << std::endl;
             running_ = false;
             break;
         }
@@ -479,9 +465,6 @@ void Server::run() {
 
 void Server::updateState() {
     currentState_.tick = tickCounter_;
-    if (tickCounter_ % 100 == 0) {
-        std::cout << "[GameServer] tick " << tickCounter_ << " timer=" << currentState_.timer << "s" << std::endl;
-    }
     // 100 env-steps/s -> each tick = 10 ms wall time
     const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(dzfoot::kSimFrequencyHz);
     currentState_.timestampUs = baseTimestampUs_ + static_cast<uint64_t>(tickCounter_) * usPerTick;
@@ -634,17 +617,6 @@ void Server::updateState() {
                     }
                 }
             }
-        }
-
-        // Log every 100 ticks (1 second at 100Hz) for debugging
-        if (tickCounter_ % 100 == 0) {
-            std::cout << "[GameServer::tick] tick=" << tickCounter_
-                      << " mode=" << static_cast<int>(info.game_mode)
-                      << " in_play=" << (info.is_in_play ? 1 : 0)
-                      << " p0.pos=" << currentState_.players[0].pos[0] << "," << currentState_.players[0].pos[1]
-                      << " p11.pos=" << currentState_.players[11].pos[0] << "," << currentState_.players[11].pos[1]
-                      << " ball=" << currentState_.ball.pos[0] << "," << currentState_.ball.pos[1]
-                      << std::endl;
         }
 
         // --- Detect card transitions (yellow = has_card flag turned on, red = is_active flag turned off) ---
@@ -1415,12 +1387,6 @@ void Server::postMatchResult(const std::string& statsUrl) {
         stats_.possession_ticks[0] = (stats_.possession_ticks[0] / total) * 100.0f;
         stats_.possession_ticks[1] = (stats_.possession_ticks[1] / total) * 100.0f;
     }
-
-    std::cout << "[GameServer] Match finished. Score: "
-              << static_cast<int>(stats_.score[0]) << " - " << static_cast<int>(stats_.score[1])
-              << " | Possession: " << stats_.possession_ticks[0] << "% - "
-              << stats_.possession_ticks[1] << "%"
-              << std::endl;
 
     StatsPoster::post(statsUrl, cfg_, stats_);
 }

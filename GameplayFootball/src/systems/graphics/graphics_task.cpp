@@ -13,6 +13,8 @@
 
 #include "graphics_system.hpp"
 
+#include "rendering/mock_renderer3d.hpp"
+
 #include "scene/objects/geometry.hpp"
 #include "scene/objects/skybox.hpp"
 #include "scene/objects/light.hpp"
@@ -89,6 +91,11 @@ namespace blunted {
 
   void GraphicsTask::GetPhase() {
 
+    // Headless: skip all rendering work when using MockRenderer3D
+    if (dynamic_cast<MockRenderer3D*>(graphicsSystem->GetRenderer3D())) {
+      return;
+    }
+
     boost::mutex::scoped_lock getPhaseLock(graphicsSystem->getPhaseMutex);
 
     TaskManager *taskManager = TaskManager::GetInstancePtr();
@@ -139,6 +146,11 @@ namespace blunted {
 
   void GraphicsTask::ProcessPhase() {
 
+    // Headless: skip all rendering work when using MockRenderer3D
+    if (dynamic_cast<MockRenderer3D*>(graphicsSystem->GetRenderer3D())) {
+      return;
+    }
+
     TaskManager *taskManager = TaskManager::GetInstancePtr();
     Renderer3D *renderer3D = graphicsSystem->GetRenderer3D();
 
@@ -165,6 +177,12 @@ namespace blunted {
   }
 
   void GraphicsTask::PutPhase() {
+
+    // Headless: skip all rendering work when using MockRenderer3D
+    if (dynamic_cast<MockRenderer3D*>(graphicsSystem->GetRenderer3D())) {
+      return;
+    }
+
     TaskManager *taskManager = TaskManager::GetInstancePtr();
     Renderer3D *renderer3D = graphicsSystem->GetRenderer3D();
 

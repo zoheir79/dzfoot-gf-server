@@ -152,7 +152,6 @@ void GameTask::PutPhase() {
   matchLifetimeMutex.lock();
 
   if (match) {
-
     matchPutBufferMutex.lock();
     match->FetchPutBuffers();
     matchPutBufferMutex.unlock();
@@ -225,5 +224,4 @@ void GameTask::PutPhase() {
   menuSceneLifetimeMutex.lock();
   if (menuScene) menuScene->Put();
   menuSceneLifetimeMutex.unlock();
-
 }

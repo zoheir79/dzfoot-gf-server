@@ -33,10 +33,7 @@ const unsigned int camPosSize = 150;//180; //130
 
 Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) : matchData(matchData), controllers(controllers) {
 
-  std::cout << "[Match] constructor START" << std::endl;
-  std::cout << "[Match] before Log Starting Match" << std::endl;
   Log(e_Notice, "Match", "Match", "Starting Match");
-  std::cout << "[Match] after Log Starting Match" << std::endl;
 
   _positionLogging = false;
 
@@ -64,12 +61,9 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   matchDurationFactor = GetConfiguration()->GetReal("match_duration", 1.0) * 0.2f + 0.05f;
   matchDifficulty = GetConfiguration()->GetReal("match_difficulty", 0.8f);
 
-  std::cout << "[Match] before dynamicNode" << std::endl;
   Log(e_Notice, "Match", "Match", "Creating dynamicNode");
   dynamicNode = boost::intrusive_ptr<Node>(new Node("dynamicNode"));
-  std::cout << "[Match] before AddNode dynamicNode" << std::endl;
   GetScene3D()->AddNode(dynamicNode);
-  std::cout << "[Match] after AddNode dynamicNode" << std::endl;
 
   Log(e_Notice, "Match", "Match", "Adding debugpilons");
 
@@ -84,10 +78,8 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   // ball
 
-  std::cout << "[Match] before Ball" << std::endl;
   Log(e_Notice, "Match", "Match", "Creating a ball");
   ball = new Ball(this);
-  std::cout << "[Match] after Ball" << std::endl;
 
   // animation database
 
@@ -117,7 +109,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
     //printf("\n");
     animPositionCache.insert(std::pair < Animation*, std::vector<Vector3> >(someAnim, positions));
   }
-  std::cout << "[Match] after anims cached" << std::endl;
 
   // full body model template
 
@@ -125,7 +116,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   ObjectLoader loader;
   fullbodyNode = loader.LoadObject(GetScene3D(), "media/objects/players/fullbody.object");
-  std::cout << "[Match] after fullbodyNode" << std::endl;
 
   Log(e_Notice, "Match", "Match", "Fullbody object: getting vertex colors");
 
@@ -146,7 +136,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   teams[1] = new Team(1, this, matchData->GetTeamData(1));
   teams[0]->InitPlayers(fullbodyNode, colorCoords);
   teams[1]->InitPlayers(fullbodyNode, colorCoords);
-  std::cout << "[Match] after teams init" << std::endl;
 
   std::vector<Player*> activePlayers;
   teams[0]->GetActivePlayers(activePlayers);
@@ -161,7 +150,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   std::string kitFilename = "media/objects/players/textures/referee_kit.png";
   boost::intrusive_ptr < Resource<Surface> > kit = ResourceManagerPool::GetInstance().GetManager<Surface>(e_ResourceType_Surface)->Fetch(kitFilename);
   officials = new Officials(this, fullbodyNode, colorCoords, kit, anims);
-  std::cout << "[Match] after officials" << std::endl;
 
   dynamicNode->AddObject(officials->GetYellowCardGeom());
   dynamicNode->AddObject(officials->GetRedCardGeom());
@@ -180,7 +168,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   cameraNode->AddObject(camera);
   cameraNode->SetPosition(Vector3(40, 0, 100));
   GetDynamicNode()->AddNode(cameraNode);
-  std::cout << "[Match] after camera" << std::endl;
 
   cameraUserZoom = GetConfiguration()->GetReal("camera_zoom", _default_CameraZoom);
   cameraUserHeight = GetConfiguration()->GetReal("camera_height", _default_CameraHeight);
@@ -221,7 +208,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
 
   stadiumNode->SetLocalMode(e_LocalMode_Absolute);
   GetScene3D()->AddNode(stadiumNode);
-  std::cout << "[Match] after stadium" << std::endl;
 
 
   // goal netting
@@ -232,7 +218,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   goalsNode->SetLocalMode(e_LocalMode_Absolute);
   GetScene3D()->AddNode(goalsNode);
   PrepareGoalNetting();
-  std::cout << "[Match] after goals/netting" << std::endl;
 
 
   // pitch
@@ -244,7 +229,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   } else {
     GeneratePitch(1024, 512, 1024, 512, 2048, 1024);
   }
-  std::cout << "[Match] after pitch" << std::endl;
 
 
   // sun
@@ -254,7 +238,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   sunNode = loader.LoadObject(GetScene3D(), "media/objects/lighting/generic.object");
   GetDynamicNode()->AddNode(sunNode);
   SetRandomSunParams();
-  std::cout << "[Match] after sun" << std::endl;
 
 
   // human gamers
@@ -262,7 +245,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   Log(e_Notice, "Match", "Match", "Human gamer controller init");
 
   UpdateControllerSetup();
-  std::cout << "[Match] after controller setup" << std::endl;
 
 
   // 12th man sound
@@ -286,7 +268,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   crowd02->SetLoop(true);
   crowd02->Poke(e_SystemType_Audio);
   GetScene3D()->AddObject(crowd02);
-  std::cout << "[Match] after crowd sounds" << std::endl;
 
 
   // match params
@@ -319,7 +300,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   Log(e_Notice, "Match", "Match", "Creating referee functionality");
 
   referee = new Referee(this);
-  std::cout << "[Match] after referee" << std::endl;
 
 
   // GUI
@@ -327,7 +307,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   Log(e_Notice, "Match", "Match", "Creating GUI elements");
 
   Gui2Root *root = menuTask->GetWindowManager()->GetRoot();
-
   radar = new Gui2Radar(menuTask->GetWindowManager(), "game_radar", 38, 78, 24, 18, this, matchData->GetTeamData(0)->GetColor1(), matchData->GetTeamData(0)->GetColor2(), matchData->GetTeamData(1)->GetColor1(), matchData->GetTeamData(1)->GetColor2());
   root->AddView(radar);
   radar->Show();
@@ -365,7 +344,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   messageCaption->SetTransparency(0.3f);
   root->AddView(messageCaption);
   messageCaptionRemoveTime_ms = actualTime_ms + 5000;
-  std::cout << "[Match] after GUI" << std::endl;
 
   // for usage in destructor
   scene3D = GetScene3D();
@@ -386,7 +364,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
     spatialIter++;
   }
   replayBallTouchesNetFrames = boost::circular_buffer<ReplayBallTouchesNetFrame>(GetReplaySize_ms() / 10);
-  std::cout << "[Match] after replays" << std::endl;
 
   excitement = 0.0f;
 
@@ -425,7 +402,6 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   LoadingMatchPage *loadingMatchPage = static_cast<LoadingMatchPage*>(menuTask->GetWindowManager()->GetPageFactory()->GetMostRecentlyCreatedPage());
   if (loadingMatchPage) loadingMatchPage->Close();
   if (Verbose()) printf("loadingmatchpage closed\n");
-  std::cout << "[Match] constructor END" << std::endl;
 }
 
 Match::~Match() {
