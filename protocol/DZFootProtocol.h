@@ -106,6 +106,13 @@ struct NetworkOfficialState {
 };
 static_assert(sizeof(NetworkOfficialState) == 32, "NetworkOfficialState size mismatch");
 
+struct NetworkCameraState {
+    float pos[3];    // 12
+    float rot[4];    // 16 (Quaternion)
+    float fov;       // 4
+};
+static_assert(sizeof(NetworkCameraState) == 32, "NetworkCameraState size mismatch");
+
 // ------------------------------------------------------------------
 // GameState packet (topic "gs", unreliable)
 // ------------------------------------------------------------------
@@ -120,8 +127,9 @@ struct GameStatePacket {
     NetworkBallState ball;
     NetworkPlayerState players[DZ_MAX_PLAYERS];
     NetworkOfficialState officials[3]; // referee + 2 linesmen
+    NetworkCameraState camera;
 };
-static_assert(sizeof(GameStatePacket) == 12 + 4 + 8 + 1 + 1 + 2 + 4 + 40 + (48 * 22) + (32 * 3), "GameStatePacket size sanity check");
+static_assert(sizeof(GameStatePacket) == 12 + 4 + 8 + 1 + 1 + 2 + 4 + 40 + (48 * 22) + (32 * 3) + 32, "GameStatePacket size sanity check");
 static_assert(sizeof(GameStatePacket) < 1300, "GameStatePacket must fit in a single datagram");
 
 // ------------------------------------------------------------------

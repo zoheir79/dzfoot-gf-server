@@ -498,6 +498,25 @@ void Server::updateState() {
                 currentState_.ball.rot[1] = rot.coords[1];
                 currentState_.ball.rot[2] = rot.coords[2];
             }
+
+            // --- Camera state ---
+            Vector3 camPos;
+            Quaternion camRot;
+            float camFov;
+            match->GetCameraState(camPos, camRot, camFov);
+
+            currentState_.camera.pos[0] = camPos.coords[0] / X_FIELD_SCALE;
+            currentState_.camera.pos[1] = camPos.coords[1] / Y_FIELD_SCALE;
+            currentState_.camera.pos[2] = camPos.coords[2] / Z_FIELD_SCALE;
+
+            currentState_.camera.rot[0] = camRot.elements[0];
+            currentState_.camera.rot[1] = camRot.elements[1];
+            currentState_.camera.rot[2] = camRot.elements[2];
+            currentState_.camera.rot[3] = camRot.elements[3];
+
+            currentState_.camera.fov = camFov;
+        } else {
+            std::memset(&currentState_.camera, 0, sizeof(currentState_.camera));
         }
 
         // --- Players state ---

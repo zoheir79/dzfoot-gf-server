@@ -175,6 +175,11 @@ class Match {
     void UpdateIngameCamera();
 
     boost::intrusive_ptr<Camera> GetCamera() { return camera; }
+    void GetCameraState(Vector3 &outPos, Quaternion &outRot, float &outFov) const {
+        outPos = cameraNodePosition;
+        outRot = cameraNodeOrientation * cameraOrientation;
+        outFov = cameraFOV;
+    }
     boost::shared_ptr<AnimCollection> GetAnims() { return anims; }
 
     void Get();
