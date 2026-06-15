@@ -157,7 +157,7 @@ int main(int argc, char* argv[]) {
                 // First 36 bytes: room_id prefix
                 std::string msgRoomId(raw.begin(), raw.begin() + 36);
                 msgRoomId.erase(std::find(msgRoomId.begin(), msgRoomId.end(), '\0'), msgRoomId.end());
-                if (msgRoomId == roomId) {
+                if (roomId.rfind(msgRoomId, 0) == 0) {
                     auto input = parseInputPacket(raw.data() + 36, raw.size() - 36);
                     server.receiveInput(input);
                 }
