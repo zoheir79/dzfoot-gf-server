@@ -1226,6 +1226,17 @@ void Server::applyPendingInputs() {
             std::cerr << "[GameServer] Anti-cheat: rejected input with invalid playerIdx=" << player << std::endl;
             continue;
         }
+        // Diagnostic: log every accepted input so we can verify kick-off commands arrive
+        static int inputLogCounter = 0;
+        if ((inputLogCounter++ % 10) == 0) {
+            std::cerr << "[GameServer] Accepted input team=" << (int)inp.team
+                      << " player=" << player
+                      << " buttons=" << inp.buttons
+                      << " dirX=" << inp.dirX
+                      << " dirZ=" << inp.dirZ
+                      << " queueSize=" << inputQueue_.size()
+                      << std::endl;
+        }
 
         float dx = inp.dirX;
         float dz = inp.dirZ;
