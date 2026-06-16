@@ -26,12 +26,17 @@ IMAGE="djdreamer79/dzfoot-gf-server:latest"
 NETWORK="${GF_NETWORK:-dzfoot-network}"
 LOGS_PATH="${GF_LOGS_HOST_PATH:-/var/log/dzfoot/gf}"
 
-# Pull latest image before starting
-docker pull "$IMAGE" >/dev/null 2>&1 || true
+# Pull latest image if possible, but don't fail if offline (use local image)
+if ! docker pull "$IMAGE" >/dev/null 2>&1; then
+    if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        echo "FATAL: Image $IMAGE not found locally and docker pull failed." >&2
+        exit 1
+    fi
+    echo "WARNING: docker pull failed, using local image $IMAGE" >&2
+fi
 
 exec docker run --rm --name gf-worker \
   -v /var/run/docker.sock:/var/run/docker.sock \
-  -v "$LOGS_PATH:/app/gf_logs:rw" \
   -e REDIS_URL="$REDIS_URL" \
   -e STATS_URL="${STATS_URL:-}" \
   -e LIVEKIT_URL="${LIVEKIT_URL:-}" \
