@@ -1,0 +1,18 @@
+[Unit]
+Description=DZFoot GF Docker Worker
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/dzfoot-gf-server
+ExecStart=/opt/dzfoot-gf-server/run_gf_worker.sh
+ExecStop=/usr/bin/docker stop -t 30 gf-worker
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

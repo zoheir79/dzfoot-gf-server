@@ -13,7 +13,7 @@ services:
       # Default URLs for standalone testing (Session Service overrides via CLI args in production)
       REDIS_URL: redis://redis:6379
       STATS_URL: http://stats:8000
-      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_URL: ${LIVEKIT_URL}
       LIVEKIT_TOKEN: ${LIVEKIT_TOKEN:-}
     # Default command for standalone testing. Session Service overrides this in production.
     command:
@@ -26,6 +26,10 @@ services:
       - "--mode=vs_ai"
       - "--redis-url=redis://redis:6379"
       - "--stats-url=http://stats:8000"
+    volumes:
+      - ./logs/gf:/app/logs
+      - ./run_logged.sh:/app/run_logged.sh:ro
+    entrypoint: ["/bin/sh", "/app/run_logged.sh"]
     # No ports exposed — WebRTC uses ephemeral UDP ports via ICE/STUN
     healthcheck:
       test: ["CMD", "gf_server", "--room-id=healthcheck", "--duration=1"]

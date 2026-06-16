@@ -30,17 +30,20 @@ RUN apt-get update && apt-get install -y \
     libcurl4 libssl3 libhiredis0.14 \
     libsdl2-2.0-0 libsdl2-image-2.0-0 libsdl2-ttf-2.0-0 libsdl2-gfx-1.0-0 \
     libopenal1 libegl1 libgl1 \
-    python3 libpython3.10 \
+    python3 python3-pip libpython3.10 \
     libboost-filesystem1.74.0 libboost-system1.74.0 libboost-thread1.74.0 libboost-python1.74.0 \
     libprotobuf23 libabsl20210324 \
     fonts-dejavu-core \
+    && pip3 install --no-cache-dir redis docker \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app/data
 COPY --from=builder /build/build/gf_server /usr/local/bin/gf_server
 COPY --from=builder /build/build/GF_build/libgame.so /usr/local/lib/
 COPY --from=builder /build/GameplayFootball/data /app/data
-RUN ldconfig
+COPY run_logged.sh /app/run_logged.sh
+COPY gf_worker_docker.py /app/gf_worker_docker.py
+RUN chmod +x /app/run_logged.sh && ldconfig
 
 # gf_server communicates via Redis only.
 # Game states are published to Redis; backend session bot forwards to LiveKit.
