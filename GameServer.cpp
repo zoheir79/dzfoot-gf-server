@@ -1339,24 +1339,19 @@ void Server::applyPendingInputs() {
 
             const PlayerInputPacket& inp = lastInput_[t][0];
             bool left_team = (t == 0);
-            // Route input to the active (human-controlled) player for this team.
-            // The engine auto-selects the active player (e.g. taker during set piece),
-            // so we read the active flag (0x04) from the last broadcast state.
+            // Route input to the HUMAN GAMER's controller slot, NOT the active
+            // player index. DZFootEnv binds one human gamer per team to controller
+            // index 0 (controllerID 0 for team 0, playerNum for team 1) via
+            // SetButton/SetDirection's idx = player + team*playerNum mapping.
+            // The engine itself auto-selects which player that gamer controls
+            // (closest to ball / set-piece taker), so we always target slot 0.
+            // Routing to the active player index (e.g. 5) writes input into an
+            // unused AI controller slot, and the input is silently discarded.
             int player = 0;
-            bool foundActive = false;
+            // Active player index (for logging/telemetry only).
+            int activeP = -1;
             for (int i = 0; i < 11; ++i) {
-                if (currentState_.players[t * 11 + i].flags & 0x04) {
-                    player = i;
-                    foundActive = true;
-                    break;
-                }
-            }
-            if (!foundActive) {
-                static int fallbackWarn = 0;
-                if ((fallbackWarn++ % 100) == 0) {
-                    printf("[gamestates] GF_WARN t=%d no active player found, falling back to player=0\n", t);
-                    fflush(stdout);
-                }
+                if (currentState_.players[t * 11 + i].flags & 0x04) { activeP = i; break; }
             }
 
             // --- AXIS MAPPING FIX ---
@@ -1376,8 +1371,8 @@ void Server::applyPendingInputs() {
 
             bool logThis = (actionLogThrottle_++ % 200) == 0;
             if (logThis) {
-                printf("[gamestates] GF_ACTION t=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
-                       t, player, engineX, engineY, inp.buttons);
+                printf("[gamestates] GF_ACTION t=%d ctrl_slot=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
+                       t, player, activeP, engineX, engineY, inp.buttons);
             }
 
             if (std::abs(engineX) < 0.05f && std::abs(engineY) < 0.05f) {
