@@ -148,6 +148,13 @@ int main(int argc, char* argv[]) {
 
     GameServer::Server server(gscfg);
 
+    std::cout << "[gamestates] GF_SERVER_START room=" << args.roomId
+              << " mode=" << (int)args.gameMode
+              << " teamA=" << args.teamA
+              << " teamB=" << args.teamB
+              << " redis=" << (args.redisUrl.empty() ? "none" : "connected")
+              << std::endl;
+
     // 3. Start input listener thread (Redis subscription for player inputs)
     std::string roomId = args.roomId;
     std::thread inputThread([&]() {

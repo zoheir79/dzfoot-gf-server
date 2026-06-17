@@ -42,8 +42,10 @@ COPY --from=builder /build/build/gf_server /usr/local/bin/gf_server
 COPY --from=builder /build/build/GF_build/libgame.so /usr/local/lib/
 COPY --from=builder /build/GameplayFootball/data /app/data
 COPY run_logged.sh /app/run_logged.sh
+COPY log_gf.sh /app/log_gf.sh
+COPY trace_input.sh /app/trace_input.sh
 COPY gf_worker_docker.py /app/gf_worker_docker.py
-RUN chmod +x /app/run_logged.sh && ldconfig
+RUN chmod +x /app/run_logged.sh /app/log_gf.sh /app/trace_input.sh && ldconfig && mkdir -p /var/log/dzfoot/gf
 
 # gf_server communicates via Redis only.
 # Game states are published to Redis; backend session bot forwards to LiveKit.
