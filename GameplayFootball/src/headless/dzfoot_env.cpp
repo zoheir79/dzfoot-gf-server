@@ -149,7 +149,7 @@ void DZFootEnv::CreateControllers() {
   }
 }
 
-void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
+void DZFootEnv::StartMatch(int team1DbID, int team2DbID, int leftAgents, int rightAgents) {
   if (!initialized_) {
     Log(e_FatalError, "dzfoot", "StartMatch", "Environment not initialized");
     return;
@@ -159,12 +159,15 @@ void DZFootEnv::StartMatch(int team1DbID, int team2DbID) {
   MatchData *matchData = new MatchData(team1DbID, team2DbID);
   menuTask->SetMatchData(matchData);
 
-  // Set controller setup: first 11 controllers = team 0, next 11 = team 1
+  // Set controller setup: only register human gamers for configured agents.
+  // In vs_AI mode (leftAgents=1, rightAgents=0) only 1 human gamer is created
+  // for team 0; the remaining 10 field players on team 0 and all 11 on team 1
+  // are controlled by the AI (ElizaController).
   std::vector<SideSelection> setup;
-  for (int i = 0; i < playerNum; i++) {
+  for (int i = 0; i < std::min(leftAgents, playerNum); i++) {
     SideSelection s; s.controllerID = i; s.side = -1; setup.push_back(s);
   }
-  for (int i = 0; i < playerNum; i++) {
+  for (int i = 0; i < std::min(rightAgents, playerNum); i++) {
     SideSelection s; s.controllerID = i + playerNum; s.side = 1; setup.push_back(s);
   }
   menuTask->SetControllerSetup(setup);
@@ -199,6 +202,14 @@ void DZFootEnv::Step() {
   gfxTask->PutPhase();        // SwapBuffers → MockRenderer3D no-op
 
   step_++;
+
+  // Save previous button states AFTER all controller processing is done.
+  // This must happen after HumanController has read GetPreviousButtonState()
+  // so that on the NEXT tick prevButtons reflects the state from THIS tick.
+  for (unsigned int i = 0; i < controllers_.size(); i++) {
+    HIDRemoteController* rc = static_cast<HIDRemoteController*>(controllers_.at(i));
+    rc->SavePrevState();
+  }
 }
 
 void DZFootEnv::SetDirection(int team, int player, float dx, float dy) {

@@ -53,7 +53,8 @@ class DZFootEnv {
   void Initialize(int resX = 1280, int resY = 720);
 
   // Start a match with given team database IDs
-  void StartMatch(int team1DbID, int team2DbID);
+  // leftAgents/rightAgents = number of human-controlled players per team (0..11)
+  void StartMatch(int team1DbID, int team2DbID, int leftAgents = 11, int rightAgents = 11);
 
   // Advance one simulation tick (100 Hz = one call per 10 ms)
   void Step();

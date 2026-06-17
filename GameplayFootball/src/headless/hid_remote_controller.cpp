@@ -20,6 +20,12 @@ namespace blunted {
   void HIDRemoteController::SaveConfig() {}
 
   void HIDRemoteController::Process() {
+    // Intentionally empty: prevButtons are managed by SavePrevState() at the END of DZFootEnv::Step(),
+    // AFTER HumanController has read the current state. This ensures GetPreviousButtonState()
+    // returns the state from the PREVIOUS tick, enabling proper button-press transition detection.
+  }
+
+  void HIDRemoteController::SavePrevState() {
     for (int i = 0; i < e_ButtonFunction_Size; i++) {
       prevButtons_[i] = buttons_[i];
     }

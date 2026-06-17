@@ -25,7 +25,10 @@ void GameEnv::start_game() {
   dzfootEnv_->Initialize(1280, 720);
 
   // Start match with default team DB IDs (1 vs 2)
-  dzfootEnv_->StartMatch(1, 2);
+  // Only register human gamers for the configured agent counts.
+  int leftAgents = std::min(std::max(scenario_config.left_agents, 0), 11);
+  int rightAgents = std::min(std::max(scenario_config.right_agents, 0), 11);
+  dzfootEnv_->StartMatch(1, 2, leftAgents, rightAgents);
 
   // Expose gameTask for GameServer.cpp direct access
   context = new GameContext();

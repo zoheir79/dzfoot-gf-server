@@ -15,6 +15,7 @@ namespace blunted {
       virtual void LoadConfig();
       virtual void SaveConfig();
       virtual void Process();
+      void SavePrevState();
 
       virtual bool GetButton(e_ButtonFunction buttonFunction);
       virtual float GetButtonValue(e_ButtonFunction buttonFunction);
