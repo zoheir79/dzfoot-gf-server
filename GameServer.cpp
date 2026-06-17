@@ -423,8 +423,7 @@ void Server::run() {
             applyPendingInputs();
             gameEnv_->step();
             ++tickCounter_;
-            // NOTE: reset_inputs() removed — applyPendingInputs() now persists
-            // lastInput_ across ticks so 20 Hz client packets stay active at 100 Hz.
+            gameEnv_->reset_inputs();
         } catch (const std::exception& e) {
             std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
@@ -1280,9 +1279,10 @@ void Server::processInputs() {
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
 
-    // Drain queue and keep newest input per (team, playerIdx).
-    PlayerInputPacket newest[2][11];
-    bool hasNewest[2][11] = {};
+    // Drain queue and keep newest input per team.
+    // We ignore playerIdx because the engine routes to the active player anyway.
+    PlayerInputPacket newest[2];
+    bool hasNewest[2] = {};
     int receivedCount = 0;
     int droppedCount = 0;
 
@@ -1300,16 +1300,16 @@ void Server::applyPendingInputs() {
             if (player < 0 || player > 10) { droppedCount++; continue; }
             if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
 
-            if (hasNewest[inp.team][player]) {
-                newest[inp.team][player].buttons |= inp.buttons;
-                newest[inp.team][player].dirX = inp.dirX;
-                newest[inp.team][player].dirZ = inp.dirZ;
-                if (inp.clientTick > newest[inp.team][player].clientTick) {
-                    newest[inp.team][player].clientTick = inp.clientTick;
+            if (hasNewest[inp.team]) {
+                newest[inp.team].buttons |= inp.buttons;
+                newest[inp.team].dirX = inp.dirX;
+                newest[inp.team].dirZ = inp.dirZ;
+                if (inp.clientTick > newest[inp.team].clientTick) {
+                    newest[inp.team].clientTick = inp.clientTick;
                 }
             } else {
-                newest[inp.team][player] = inp;
-                hasNewest[inp.team][player] = true;
+                newest[inp.team] = inp;
+                hasNewest[inp.team] = true;
             }
         }
     }
@@ -1322,17 +1322,25 @@ void Server::applyPendingInputs() {
     }
 
     for (int t = 0; t < 2; ++t) {
-        for (int p = 0; p < 11; ++p) {
-            // Update persistent state if a new packet arrived, otherwise reuse lastInput_.
-            if (hasNewest[t][p]) {
-                lastInput_[t][p] = newest[t][p];
-                hasLastInput_[t][p] = true;
-            }
-            if (!hasLastInput_[t][p]) continue;
+        // Update persistent state if a new packet arrived, otherwise reuse lastInput_.
+        if (hasNewest[t]) {
+            lastInput_[t][0] = newest[t];
+            hasLastInput_[t][0] = true;
+        }
+        if (!hasLastInput_[t][0]) continue;
 
-            const PlayerInputPacket& inp = lastInput_[t][p];
+            const PlayerInputPacket& inp = lastInput_[t][0];
             bool left_team = (t == 0);
-            int player = 0; // controller 0 is the human gamer per team
+            // Route input to the active (human-controlled) player for this team.
+            // The engine auto-selects the active player (e.g. taker during set piece),
+            // so we read the active flag (0x04) from the last broadcast state.
+            int player = 0;
+            for (int i = 0; i < 11; ++i) {
+                if (currentState_.players[t * 11 + i].flags & 0x04) {
+                    player = i;
+                    break;
+                }
+            }
 
             // --- AXIS MAPPING FIX ---
             // Client sends:
@@ -1352,8 +1360,8 @@ void Server::applyPendingInputs() {
             static int actionLogThrottle = 0;
             bool logThis = (actionLogThrottle++ % 200) == 0;
             if (logThis) {
-                printf("[gamestates] GF_ACTION t=%d p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
-                       t, p, engineX, engineY, inp.buttons);
+                printf("[gamestates] GF_ACTION t=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
+                       t, player, engineX, engineY, inp.buttons);
             }
 
             if (std::abs(engineX) < 0.05f && std::abs(engineY) < 0.05f) {
@@ -1397,7 +1405,6 @@ void Server::applyPendingInputs() {
             else                                         { gameEnv_->action(game_release_long_pass, left_team, player); }
 
             if (logThis) { printf("\n"); fflush(stdout); }
-        }
     }
 }
 
