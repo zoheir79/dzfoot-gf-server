@@ -1250,7 +1250,7 @@ void Server::broadcastGameState() {
 void Server::receiveInput(const PlayerInputPacket& input) {
     static int recvLogThrottle = 0;
     if ((recvLogThrottle++ % 20) == 0) {
-        printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%04X ver=%u\n",
+        printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%08X ver=%u\n",
                input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons,
                input.header.magic, input.header.version);
         fflush(stdout);
