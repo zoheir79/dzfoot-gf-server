@@ -114,6 +114,10 @@ void Server::sendMatchSetup() {
     copyString(setup.teamAName, sizeof(setup.teamAName), cfg_.teamA);
     copyString(setup.teamBName, sizeof(setup.teamBName), cfg_.teamB);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
+    setup.playerCount = 22; // 11 per team
+    printf("[gamestates] GF_SETUP teamA=%s teamB=%s duration=%u players=%u\n",
+           setup.teamAName, setup.teamBName, setup.durationMinutes, setup.playerCount);
+    fflush(stdout);
     {
         // Simple string hash (uint8_t) — 256 possible values. Collisions are
         // extremely unlikely for the small set of stadium names DZFoot uses.
@@ -124,7 +128,7 @@ void Server::sendMatchSetup() {
 
     Match* match = gameEnv_->context->gameTask->GetMatch();
     if (!match) {
-        std::cerr << "[GameServer] sendMatchSetup: match not available" << std::endl;
+        std::cerr << "[gamestates] GF_SETUP_ERR: match not available" << std::endl;
         return;
     }
 
@@ -227,13 +231,13 @@ void Server::run() {
     }
     const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
     if (dataDir && chdir(dataDir) != 0) {
-        std::cerr << "[GameServer] Warning: failed to chdir to " << dataDir << std::endl;
+        std::cerr << "[gamestates] GF_WARN: failed to chdir to " << dataDir << std::endl;
     }
 
     // Redis is already configured by main() and passed via cfg_.redis
     bool hasRedis = cfg_.redis && cfg_.redis->isConfigured();
     if (!hasRedis) {
-        std::cerr << "[GameServer] WARNING: Redis not configured. No game state will be broadcast."
+        std::cerr << "[gamestates] GF_WARN: Redis not configured. No game state will be broadcast."
                   << " Set --redis-url=..." << std::endl;
     }
 
@@ -254,13 +258,13 @@ void Server::run() {
         if (MatchConfig::loadString(cfg_.matchConfigJson, mcfg)) {
             hasCustomConfig = true;
         } else {
-            std::cerr << "[GameServer] Failed to load match config from JSON string" << std::endl;
+            std::cerr << "[gamestates] GF_CONFIG_ERR: Failed to load match config from JSON string" << std::endl;
         }
     } else if (!cfg_.matchConfigPath.empty()) {
         if (MatchConfig::load(cfg_.matchConfigPath, mcfg)) {
             hasCustomConfig = true;
         } else {
-            std::cerr << "[GameServer] Failed to load match config from file" << std::endl;
+            std::cerr << "[gamestates] GF_CONFIG_ERR: Failed to load match config from file" << std::endl;
         }
     }
 
@@ -323,7 +327,7 @@ void Server::run() {
                             if (!stat.empty()) {
                                 pd->SetStat(stat, kv.second);
                             } else {
-                                std::cerr << "[GameServer] Unknown skill '" << kv.first
+                                std::cerr << "[gamestates] GF_CONFIG_WARN: Unknown skill '" << kv.first
                                           << "' for player " << profile.name << std::endl;
                             }
                         }
@@ -357,7 +361,33 @@ void Server::run() {
         cfg_.redis->publish("gf.ready", cfg_.roomId);
     }
 
-    std::cout << "[GameServer] Match simulation successfully started. Running silently..." << std::endl;
+    {
+        Match* match = (gameEnv_->context && gameEnv_->context->gameTask) ? gameEnv_->context->gameTask->GetMatch() : nullptr;
+        int gameMode = match ? match->GetMatchPhase() : -1;
+        std::cout << "[gamestates] GF_START room=" << cfg_.roomId
+                  << " gameMode=" << cfg_.gameMode
+                  << " leftAgents=" << sc.left_agents
+                  << " rightAgents=" << sc.right_agents
+                  << " durationSteps=" << sc.game_duration
+                  << " matchPtr=" << (match ? "yes" : "NO")
+                  << std::endl;
+        if (match) {
+            Team* t0 = match->GetTeam(0);
+            Team* t1 = match->GetTeam(1);
+            std::cout << "[gamestates] GF_TEAMS T0=" << (t0 ? "ok" : "NULL")
+                      << " T1=" << (t1 ? "ok" : "NULL")
+                      << " inPlay=" << (match->IsInPlay() ? "YES" : "no")
+                      << " setPiece=" << (match->IsInSetPiece() ? 1 : 0)
+                      << std::endl;
+            if (t0) {
+                Player* sp = t0->MainSelectedPlayer();
+                std::cout << "[gamestates] GF_ACTIVE T0 selectedRole=" << (sp ? sp->GetFormationEntry().role : -1)
+                          << " active=" << (sp ? sp->IsActive() : false)
+                          << std::endl;
+            }
+        }
+        std::cout << "[gamestates] GF_STARTED" << std::endl;
+    }
 
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -394,14 +424,14 @@ void Server::run() {
             gameEnv_->step();
             ++tickCounter_;
         } catch (const std::exception& e) {
-            std::cerr << "[GameServer] Exception in step(): " << e.what() << std::endl;
+            std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
                 cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
             running_ = false;
             break;
         } catch (...) {
-            std::cerr << "[GameServer] Unknown exception in step()" << std::endl;
+            std::cerr << "[gamestates] GF_CRASH: Unknown exception in step()" << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
                 cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
@@ -416,14 +446,14 @@ void Server::run() {
             try {
                 updateState();
             } catch (const std::exception& e) {
-                std::cerr << "[GameServer] Exception in updateState(): " << e.what() << std::endl;
+                std::cerr << "[gamestates] GF_CRASH: Exception in updateState(): " << e.what() << std::endl;
                 if (cfg_.redis && cfg_.redis->isConfigured()) {
                     cfg_.redis->publish("gf.crashed", cfg_.roomId);
                 }
                 running_ = false;
                 break;
             } catch (...) {
-                std::cerr << "[GameServer] Unknown exception in updateState()" << std::endl;
+                std::cerr << "[gamestates] GF_CRASH: Unknown exception in updateState()" << std::endl;
                 if (cfg_.redis && cfg_.redis->isConfigured()) {
                     cfg_.redis->publish("gf.crashed", cfg_.roomId);
                 }
@@ -599,6 +629,33 @@ void Server::updateState() {
 
         fillTeam(0, 0);
         fillTeam(1, 11);
+
+        // Server-side position debug: log every 100 ticks to verify engine movement
+        if (tickCounter_ % 100 == 0) {
+            Match* m = match;
+            int setPiece = m ? (m->IsInSetPiece() ? 1 : 0) : -1;
+            int activeIdx = -1;
+            for (int i = 0; i < 22; ++i) {
+                if (currentState_.players[i].flags & 4) { activeIdx = i; break; }
+            }
+            printf("[gamestates] GF_STATE tick=%u ball=(%.3f,%.3f,%.3f) vel=(%.3f,%.3f,%.3f) cam=(%.3f,%.3f,%.3f) mode=%d inPlay=%d setPiece=%d active=%d\n",
+                   tickCounter_,
+                   currentState_.ball.pos[0], currentState_.ball.pos[1], currentState_.ball.pos[2],
+                   currentState_.ball.vel[0], currentState_.ball.vel[1], currentState_.ball.vel[2],
+                   currentState_.camera.pos[0], currentState_.camera.pos[1], currentState_.camera.pos[2],
+                   currentState_.gameMode, currentState_.gameFlags, setPiece, activeIdx);
+            char pbuf[4096];
+            int off = 0;
+            off += snprintf(pbuf + off, sizeof(pbuf) - off, "[gamestates] GF_PLAYERS ");
+            for (int i = 0; i < 22 && off < (int)sizeof(pbuf) - 60; ++i) {
+                off += snprintf(pbuf + off, sizeof(pbuf) - off, "p%d=(%.2f,%.2f,a=%u,rY=%.1f,f=%u) ",
+                                i, currentState_.players[i].pos[0], currentState_.players[i].pos[1],
+                                currentState_.players[i].anim, currentState_.players[i].rotY,
+                                currentState_.players[i].flags);
+            }
+            printf("%s\n", pbuf);
+            fflush(stdout);
+        }
 
         // --- Officials (referee + 2 linesmen) ---
         if (match) {
@@ -1169,6 +1226,13 @@ void Server::broadcastGameState() {
     std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
     cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
 
+    static int bcLogThrottle = 0;
+    if ((bcLogThrottle++ % 20) == 0) {
+        printf("[gamestates] GF_BROADCAST tick=%u gs_size=%zu events=%zu room=%s\n",
+               currentState_.tick, gsBuf.size(), eventQueue_.size(), cfg_.roomId.c_str());
+        fflush(stdout);
+    }
+
     for (auto& ev : eventQueue_) {
         ev.header.magic   = dzfoot::DZ_MAGIC;
         ev.header.version = dzfoot::DZ_PROTOCOL_VERSION;
@@ -1184,6 +1248,13 @@ void Server::broadcastGameState() {
 }
 
 void Server::receiveInput(const PlayerInputPacket& input) {
+    static int recvLogThrottle = 0;
+    if ((recvLogThrottle++ % 20) == 0) {
+        printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%04X ver=%u\n",
+               input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons,
+               input.header.magic, input.header.version);
+        fflush(stdout);
+    }
     std::lock_guard<std::mutex> lock(inputMutex_);
     if (inputQueue_.size() >= 64) {
         inputQueue_.pop(); // drop oldest to prevent memory flood
@@ -1198,98 +1269,104 @@ void Server::processInputs() {
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
 
-    // Reset all controller states before applying new inputs.
-    // This prevents "sticky" inputs when a client stops sending packets.
-    gameEnv_->reset_inputs();
+    // Keep only the newest input per (team, playerIdx).
+    // This prevents stale packets from flickering button states within a tick.
+    PlayerInputPacket newest[2][11];
+    bool hasNewest[2][11] = {};
+    int receivedCount = 0;
+    int droppedCount = 0;
 
-    std::lock_guard<std::mutex> lock(inputMutex_);
-    while (!inputQueue_.empty()) {
-        PlayerInput inp = inputQueue_.front();
-        inputQueue_.pop();
+    {
+        std::lock_guard<std::mutex> lock(inputMutex_);
+        while (!inputQueue_.empty()) {
+            PlayerInputPacket inp = inputQueue_.front();
+            inputQueue_.pop();
+            receivedCount++;
 
-        // Anti-cheat: validate team assignment
-        if (inp.team > 1) {
-            std::cerr << "[GameServer] Anti-cheat: rejected input with invalid team=" << (int)inp.team << std::endl;
-            continue;
+            if (inp.team > 1) { droppedCount++; continue; }
+            if (cfg_.gameMode == 2) { droppedCount++; continue; }
+            if (cfg_.gameMode == 1 && inp.team == 1) { droppedCount++; continue; }
+            int player = static_cast<int>(inp.playerIdx);
+            if (player < 0 || player > 10) { droppedCount++; continue; }
+            if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
+
+            newest[inp.team][player] = inp;
+            hasNewest[inp.team][player] = true;
         }
-        if (cfg_.gameMode == 2) {
-            // ai_vs_ai: no human inputs allowed
-            continue;
+    }
+
+    static int logThrottle = 0;
+    if (receivedCount > 0 && (logThrottle++ % 100) == 0) {
+        printf("[gamestates] GF_APPLY received=%d dropped=%d queue-empty=%s\n",
+               receivedCount, droppedCount, inputQueue_.empty() ? "yes" : "no");
+        fflush(stdout);
+    }
+
+    for (int t = 0; t < 2; ++t) {
+        for (int p = 0; p < 11; ++p) {
+            if (!hasNewest[t][p]) continue;
+
+            const PlayerInputPacket& inp = newest[t][p];
+            bool left_team = (t == 0);
+            int player = p;
+
+            float dx = inp.dirX;
+            float dz = inp.dirZ;
+            if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
+            if (dz < -1.0f) dz = -1.0f; if (dz > 1.0f) dz = 1.0f;
+            float lenSq = dx*dx + dz*dz;
+            if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); dx *= inv; dz *= inv; }
+
+            static int actionLogThrottle = 0;
+            bool logThis = (actionLogThrottle++ % 200) == 0;
+            if (logThis) {
+                printf("[gamestates] GF_ACTION t=%d p=%d dir=(%.3f,%.3f) buttons=0x%04X ", t, p, dx, dz, inp.buttons);
+            }
+
+            gameEnv_->action(game_release_direction, left_team, player);
+
+            if (std::abs(dx) < 0.3f && std::abs(dz) < 0.3f) {
+                gameEnv_->action(game_idle, left_team, player);
+                if (logThis) printf("action=idle ");
+            } else {
+                float angle = std::atan2(-dz, dx);
+                const float sector = 3.14159265f / 8.0f;
+                if (angle < -7*sector || angle >= 7*sector)       { gameEnv_->action(game_right, left_team, player); if (logThis) printf("action=right "); }
+                else if (angle >= -7*sector && angle < -5*sector) { gameEnv_->action(game_bottom_right, left_team, player); if (logThis) printf("action=bottom_right "); }
+                else if (angle >= -5*sector && angle < -3*sector) { gameEnv_->action(game_bottom, left_team, player); if (logThis) printf("action=bottom "); }
+                else if (angle >= -3*sector && angle < -sector)   { gameEnv_->action(game_bottom_left, left_team, player); if (logThis) printf("action=bottom_left "); }
+                else if (angle >= -sector && angle < sector)      { gameEnv_->action(game_left, left_team, player); if (logThis) printf("action=left "); }
+                else if (angle >= sector && angle < 3*sector)     { gameEnv_->action(game_top_left, left_team, player); if (logThis) printf("action=top_left "); }
+                else if (angle >= 3*sector && angle < 5*sector)   { gameEnv_->action(game_top, left_team, player); if (logThis) printf("action=top "); }
+                else                                               { gameEnv_->action(game_top_right, left_team, player); if (logThis) printf("action=top_right "); }
+            }
+
+            if (inp.buttons & dzfoot::BUTTON_PASS)       { gameEnv_->action(game_short_pass, left_team, player); if (logThis) printf("btn=PASS "); }
+            else                                         { gameEnv_->action(game_release_short_pass, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_HIGH_PASS)   { gameEnv_->action(game_high_pass, left_team, player); if (logThis) printf("btn=HIGH "); }
+            else                                          { gameEnv_->action(game_release_high_pass, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_SHOT)       { gameEnv_->action(game_shot, left_team, player); if (logThis) printf("btn=SHOT "); }
+            else                                          { gameEnv_->action(game_release_shot, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_SLIDING)    { gameEnv_->action(game_sliding, left_team, player); if (logThis) printf("btn=SLIDE "); }
+            else                                          { gameEnv_->action(game_release_sliding, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    { gameEnv_->action(game_dribbling, left_team, player); if (logThis) printf("btn=DRIB "); }
+            else                                          { gameEnv_->action(game_release_dribbling, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_SPRINT)     { gameEnv_->action(game_sprint, left_team, player); if (logThis) printf("btn=SPRINT "); }
+            else                                          { gameEnv_->action(game_release_sprint, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_SWITCH_PLAYER) { gameEnv_->action(game_switch, left_team, player); if (logThis) printf("btn=SWITCH "); }
+            else                                              { gameEnv_->action(game_release_switch, left_team, player); }
+
+            if (inp.buttons & dzfoot::BUTTON_KICK)       { gameEnv_->action(game_long_pass, left_team, player); if (logThis) printf("btn=KICK "); }
+            else                                          { gameEnv_->action(game_release_long_pass, left_team, player); }
+
+            if (logThis) { printf("\n"); fflush(stdout); }
         }
-        if (cfg_.gameMode == 1 && inp.team == 1) {
-            std::cerr << "[GameServer] Anti-cheat: rejected input for AI team (mode=vs_AI)" << std::endl;
-            continue;
-        }
-        bool left_team = (inp.team == 0);
-        int player = static_cast<int>(inp.playerIdx);
-        if (player < 0 || player > 10) {
-            std::cerr << "[GameServer] Anti-cheat: rejected input with invalid playerIdx=" << player << std::endl;
-            continue;
-        }
-        // Diagnostic: log every accepted input so we can verify kick-off commands arrive
-        static int inputLogCounter = 0;
-        if ((inputLogCounter++ % 10) == 0) {
-            std::cerr << "[GameServer] Accepted input team=" << (int)inp.team
-                      << " player=" << player
-                      << " buttons=" << inp.buttons
-                      << " dirX=" << inp.dirX
-                      << " dirZ=" << inp.dirZ
-                      << " queueSize=" << inputQueue_.size()
-                      << std::endl;
-        }
-
-        float dx = inp.dirX;
-        float dz = inp.dirZ;
-        if (!std::isfinite(dx) || !std::isfinite(dz)) {
-            std::cerr << "[GameServer] Anti-cheat: rejected input with non-finite direction" << std::endl;
-            continue;
-        }
-        // Clamp and normalize handled by sanitizePlayerInput on client, re-validate here
-        if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
-        if (dz < -1.0f) dz = -1.0f; if (dz > 1.0f) dz = 1.0f;
-        float lenSq = dx*dx + dz*dz;
-        if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); dx *= inv; dz *= inv; }
-
-        gameEnv_->action(game_release_direction, left_team, player);
-
-        if (std::abs(dx) < 0.3f && std::abs(dz) < 0.3f) {
-            gameEnv_->action(game_idle, left_team, player);
-        } else {
-            float angle = std::atan2(-dz, dx);
-            const float sector = 3.14159265f / 8.0f;
-            if (angle < -7*sector || angle >= 7*sector)       gameEnv_->action(game_right, left_team, player);
-            else if (angle >= -7*sector && angle < -5*sector) gameEnv_->action(game_bottom_right, left_team, player);
-            else if (angle >= -5*sector && angle < -3*sector) gameEnv_->action(game_bottom, left_team, player);
-            else if (angle >= -3*sector && angle < -sector)   gameEnv_->action(game_bottom_left, left_team, player);
-            else if (angle >= -sector && angle < sector)      gameEnv_->action(game_left, left_team, player);
-            else if (angle >= sector && angle < 3*sector)     gameEnv_->action(game_top_left, left_team, player);
-            else if (angle >= 3*sector && angle < 5*sector)   gameEnv_->action(game_top, left_team, player);
-            else                                               gameEnv_->action(game_top_right, left_team, player);
-        }
-
-        if (inp.buttons & dzfoot::BUTTON_PASS)       gameEnv_->action(game_short_pass, left_team, player);
-        else                                           gameEnv_->action(game_release_short_pass, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_HIGH_PASS)   gameEnv_->action(game_high_pass, left_team, player);
-        else                                            gameEnv_->action(game_release_high_pass, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_SHOT)       gameEnv_->action(game_shot, left_team, player);
-        else                                          gameEnv_->action(game_release_shot, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_SLIDING)    gameEnv_->action(game_sliding, left_team, player);
-        else                                          gameEnv_->action(game_release_sliding, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    gameEnv_->action(game_dribbling, left_team, player);
-        else                                          gameEnv_->action(game_release_dribbling, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_SPRINT)     gameEnv_->action(game_sprint, left_team, player);
-        else                                          gameEnv_->action(game_release_sprint, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_SWITCH_PLAYER) gameEnv_->action(game_switch, left_team, player);
-        else                                             gameEnv_->action(game_release_switch, left_team, player);
-
-        if (inp.buttons & dzfoot::BUTTON_KICK)       gameEnv_->action(game_long_pass, left_team, player);
-        else                                          gameEnv_->action(game_release_long_pass, left_team, player);
     }
 }
 
