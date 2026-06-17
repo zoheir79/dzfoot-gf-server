@@ -423,6 +423,7 @@ void Server::run() {
             applyPendingInputs();
             gameEnv_->step();
             ++tickCounter_;
+            gameEnv_->reset_inputs();
         } catch (const std::exception& e) {
             std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
@@ -589,7 +590,7 @@ void Server::updateState() {
                 if (p->IsActive()) ps.flags |= 1;
                 if (p->HasCards()) ps.flags |= 2;
                 if (p == t->MainSelectedPlayer()) ps.flags |= 4;
-                if (info.ball_owned_team == teamId && info.ball_owned_player == static_cast<int>(i)) {
+                if (info.ball_owned_team == teamId && info.ball_owned_player == p->GetID()) {
                     ps.flags |= 8; // has_possession
                 }
 
@@ -1248,12 +1249,21 @@ void Server::broadcastGameState() {
 }
 
 void Server::receiveInput(const PlayerInputPacket& input) {
-    static int recvLogThrottle = 0;
-    if ((recvLogThrottle++ % 20) == 0) {
+    bool hasInput = (input.buttons != 0) || (std::abs(input.dirX) > 0.01f) || (std::abs(input.dirZ) > 0.01f);
+    if (hasInput) {
+        // Always log real inputs so we can diagnose button taps
         printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%08X ver=%u\n",
                input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons,
                input.header.magic, input.header.version);
         fflush(stdout);
+    } else {
+        static int recvLogThrottle = 0;
+        if ((recvLogThrottle++ % 20) == 0) {
+            printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%08X ver=%u\n",
+                   input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons,
+                   input.header.magic, input.header.version);
+            fflush(stdout);
+        }
     }
     std::lock_guard<std::mutex> lock(inputMutex_);
     if (inputQueue_.size() >= 64) {
@@ -1290,8 +1300,19 @@ void Server::applyPendingInputs() {
             if (player < 0 || player > 10) { droppedCount++; continue; }
             if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
 
-            newest[inp.team][player] = inp;
-            hasNewest[inp.team][player] = true;
+            if (hasNewest[inp.team][player]) {
+                // Merge: OR buttons so a quick press+release is not lost.
+                // Direction from the newest packet wins.
+                newest[inp.team][player].buttons |= inp.buttons;
+                newest[inp.team][player].dirX = inp.dirX;
+                newest[inp.team][player].dirZ = inp.dirZ;
+                if (inp.clientTick > newest[inp.team][player].clientTick) {
+                    newest[inp.team][player].clientTick = inp.clientTick;
+                }
+            } else {
+                newest[inp.team][player] = inp;
+                hasNewest[inp.team][player] = true;
+            }
         }
     }
 
@@ -1308,7 +1329,11 @@ void Server::applyPendingInputs() {
 
             const PlayerInputPacket& inp = newest[t][p];
             bool left_team = (t == 0);
-            int player = p;
+            // DZFootEnv headless registers only controller 0 as a human gamer per team
+            // (see CreateControllers + StartMatch leftAgents/rightAgents).
+            // The engine auto-selects the active player (e.g. taker during set piece),
+            // so we must route all inputs for this team to controller 0.
+            int player = 0;
 
             float dx = inp.dirX;
             float dz = inp.dirZ;
@@ -1323,9 +1348,9 @@ void Server::applyPendingInputs() {
                 printf("[gamestates] GF_ACTION t=%d p=%d dir=(%.3f,%.3f) buttons=0x%04X ", t, p, dx, dz, inp.buttons);
             }
 
-            gameEnv_->action(game_release_direction, left_team, player);
-
-            if (std::abs(dx) < 0.3f && std::abs(dz) < 0.3f) {
+            // Direction: reset_inputs() already cleared controllers at end of previous tick,
+            // so we only need to apply the fresh input direction.
+            if (std::abs(dx) < 0.05f && std::abs(dz) < 0.05f) {
                 gameEnv_->action(game_idle, left_team, player);
                 if (logThis) printf("action=idle ");
             } else {

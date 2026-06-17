@@ -10,6 +10,7 @@
 #include "onthepitch/team.hpp"
 #include "onthepitch/player/player.hpp"
 #include "onthepitch/ball.hpp"
+#include "onthepitch/referee.hpp"
 
 #include <algorithm>
 
@@ -207,5 +208,31 @@ void GameEnv::action(int action, bool left_team, int player) {
       break;
     default:
       break;
+  }
+}
+
+bool GameEnv::is_in_set_piece() const {
+  if (!dzfootEnv_) return false;
+  Match* match = dzfootEnv_->GetMatch();
+  if (!match) return false;
+  return match->IsInSetPiece();
+}
+
+void GameEnv::force_kickoff() {
+  if (!dzfootEnv_) return;
+  Match* match = dzfootEnv_->GetMatch();
+  if (!match) return;
+  if (match->IsInSetPiece()) {
+    match->StopSetPiece();
+    Referee* referee = match->GetReferee();
+    if (referee) {
+      referee->GetBuffer().active = false;
+    }
+    for (int t = 0; t < 2; t++) {
+      Team* team = match->GetTeam(t);
+      if (team && team->GetController()) {
+        team->GetController()->PrepareSetPiece(e_SetPiece_None);
+      }
+    }
   }
 }

@@ -83,6 +83,10 @@ class GameEnv {
   void action(int action, bool left_team, int player);
   void reset_inputs();
 
+  // Helpers for server-side set-piece management
+  bool is_in_set_piece() const;
+  void force_kickoff();
+
   // Apply custom formations from scenario_config to the live match.
   // Must be called after start_game() (Match exists) and before the loop.
   void apply_formations();
