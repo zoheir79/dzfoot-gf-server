@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """DZFoot GF Worker - Docker mode via docker-py"""
 import os, sys, json, time, signal, threading
-import atexit
 
 REDIS_URL = os.getenv("REDIS_URL")
 STATS_URL = os.getenv("STATS_URL")
