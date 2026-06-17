@@ -423,7 +423,8 @@ void Server::run() {
             applyPendingInputs();
             gameEnv_->step();
             ++tickCounter_;
-            gameEnv_->reset_inputs();
+            // NOTE: reset_inputs() removed — applyPendingInputs() now persists
+            // lastInput_ across ticks so 20 Hz client packets stay active at 100 Hz.
         } catch (const std::exception& e) {
             std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
@@ -1279,8 +1280,7 @@ void Server::processInputs() {
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
 
-    // Keep only the newest input per (team, playerIdx).
-    // This prevents stale packets from flickering button states within a tick.
+    // Drain queue and keep newest input per (team, playerIdx).
     PlayerInputPacket newest[2][11];
     bool hasNewest[2][11] = {};
     int receivedCount = 0;
@@ -1301,8 +1301,6 @@ void Server::applyPendingInputs() {
             if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
 
             if (hasNewest[inp.team][player]) {
-                // Merge: OR buttons so a quick press+release is not lost.
-                // Direction from the newest packet wins.
                 newest[inp.team][player].buttons |= inp.buttons;
                 newest[inp.team][player].dirX = inp.dirX;
                 newest[inp.team][player].dirZ = inp.dirZ;
@@ -1325,70 +1323,78 @@ void Server::applyPendingInputs() {
 
     for (int t = 0; t < 2; ++t) {
         for (int p = 0; p < 11; ++p) {
-            if (!hasNewest[t][p]) continue;
+            // Update persistent state if a new packet arrived, otherwise reuse lastInput_.
+            if (hasNewest[t][p]) {
+                lastInput_[t][p] = newest[t][p];
+                hasLastInput_[t][p] = true;
+            }
+            if (!hasLastInput_[t][p]) continue;
 
-            const PlayerInputPacket& inp = newest[t][p];
+            const PlayerInputPacket& inp = lastInput_[t][p];
             bool left_team = (t == 0);
-            // DZFootEnv headless registers only controller 0 as a human gamer per team
-            // (see CreateControllers + StartMatch leftAgents/rightAgents).
-            // The engine auto-selects the active player (e.g. taker during set piece),
-            // so we must route all inputs for this team to controller 0.
-            int player = 0;
+            int player = 0; // controller 0 is the human gamer per team
 
-            float dx = inp.dirX;
-            float dz = inp.dirZ;
-            if (dx < -1.0f) dx = -1.0f; if (dx > 1.0f) dx = 1.0f;
-            if (dz < -1.0f) dz = -1.0f; if (dz > 1.0f) dz = 1.0f;
-            float lenSq = dx*dx + dz*dz;
-            if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); dx *= inv; dz *= inv; }
+            // --- AXIS MAPPING FIX ---
+            // Client sends:
+            //   dirX = screen left/right   (left = -1, right = +1)
+            //   dirZ = screen up/down      (up   = +1, down  = -1)  where up = forward
+            // GF engine uses:
+            //   coords[0] (X) = forward/backward  (CF at +1, GK at -1)
+            //   coords[1] (Y) = left/right         (LB at +0.75, RB at -0.75)
+            // So: engine X = client dirZ, engine Y = -client dirX
+            float engineX = inp.dirZ;
+            float engineY = -inp.dirX;
+            if (engineX < -1.0f) engineX = -1.0f; if (engineX > 1.0f) engineX = 1.0f;
+            if (engineY < -1.0f) engineY = -1.0f; if (engineY > 1.0f) engineY = 1.0f;
+            float lenSq = engineX*engineX + engineY*engineY;
+            if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); engineX *= inv; engineY *= inv; }
 
             static int actionLogThrottle = 0;
             bool logThis = (actionLogThrottle++ % 200) == 0;
             if (logThis) {
-                printf("[gamestates] GF_ACTION t=%d p=%d dir=(%.3f,%.3f) buttons=0x%04X ", t, p, dx, dz, inp.buttons);
+                printf("[gamestates] GF_ACTION t=%d p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
+                       t, p, engineX, engineY, inp.buttons);
             }
 
-            // Direction: reset_inputs() already cleared controllers at end of previous tick,
-            // so we only need to apply the fresh input direction.
-            if (std::abs(dx) < 0.05f && std::abs(dz) < 0.05f) {
+            if (std::abs(engineX) < 0.05f && std::abs(engineY) < 0.05f) {
                 gameEnv_->action(game_idle, left_team, player);
                 if (logThis) printf("action=idle ");
             } else {
-                float angle = std::atan2(-dz, dx);
+                float angle = std::atan2(engineY, engineX);
                 const float sector = 3.14159265f / 8.0f;
-                if (angle < -7*sector || angle >= 7*sector)       { gameEnv_->action(game_right, left_team, player); if (logThis) printf("action=right "); }
-                else if (angle >= -7*sector && angle < -5*sector) { gameEnv_->action(game_bottom_right, left_team, player); if (logThis) printf("action=bottom_right "); }
-                else if (angle >= -5*sector && angle < -3*sector) { gameEnv_->action(game_bottom, left_team, player); if (logThis) printf("action=bottom "); }
-                else if (angle >= -3*sector && angle < -sector)   { gameEnv_->action(game_bottom_left, left_team, player); if (logThis) printf("action=bottom_left "); }
-                else if (angle >= -sector && angle < sector)      { gameEnv_->action(game_left, left_team, player); if (logThis) printf("action=left "); }
-                else if (angle >= sector && angle < 3*sector)     { gameEnv_->action(game_top_left, left_team, player); if (logThis) printf("action=top_left "); }
-                else if (angle >= 3*sector && angle < 5*sector)   { gameEnv_->action(game_top, left_team, player); if (logThis) printf("action=top "); }
-                else                                               { gameEnv_->action(game_top_right, left_team, player); if (logThis) printf("action=top_right "); }
+                if      (angle < -7*sector || angle >= 7*sector)       { gameEnv_->action(game_right,        left_team, player); if (logThis) printf("action=right ");       }
+                else if (angle >= -7*sector && angle < -5*sector)      { gameEnv_->action(game_bottom_right, left_team, player); if (logThis) printf("action=bottom_right ");}
+                else if (angle >= -5*sector && angle < -3*sector)    { gameEnv_->action(game_bottom,       left_team, player); if (logThis) printf("action=bottom ");      }
+                else if (angle >= -3*sector && angle < -sector)        { gameEnv_->action(game_bottom_left,  left_team, player); if (logThis) printf("action=bottom_left "); }
+                else if (angle >= -sector && angle < sector)         { gameEnv_->action(game_left,         left_team, player); if (logThis) printf("action=left ");         }
+                else if (angle >= sector && angle < 3*sector)        { gameEnv_->action(game_top_left,      left_team, player); if (logThis) printf("action=top_left ");      }
+                else if (angle >= 3*sector && angle < 5*sector)        { gameEnv_->action(game_top,           left_team, player); if (logThis) printf("action=top ");           }
+                else                                                  { gameEnv_->action(game_top_right,     left_team, player); if (logThis) printf("action=top_right ");     }
             }
 
             if (inp.buttons & dzfoot::BUTTON_PASS)       { gameEnv_->action(game_short_pass, left_team, player); if (logThis) printf("btn=PASS "); }
             else                                         { gameEnv_->action(game_release_short_pass, left_team, player); }
 
-            if (inp.buttons & dzfoot::BUTTON_HIGH_PASS)   { gameEnv_->action(game_high_pass, left_team, player); if (logThis) printf("btn=HIGH "); }
-            else                                          { gameEnv_->action(game_release_high_pass, left_team, player); }
+            if (inp.buttons & dzfoot::BUTTON_HIGH_PASS)  { gameEnv_->action(game_high_pass, left_team, player); if (logThis) printf("btn=HIGH "); }
+            else                                         { gameEnv_->action(game_release_high_pass, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_SHOT)       { gameEnv_->action(game_shot, left_team, player); if (logThis) printf("btn=SHOT "); }
-            else                                          { gameEnv_->action(game_release_shot, left_team, player); }
+            else                                         { gameEnv_->action(game_release_shot, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_SLIDING)    { gameEnv_->action(game_sliding, left_team, player); if (logThis) printf("btn=SLIDE "); }
-            else                                          { gameEnv_->action(game_release_sliding, left_team, player); }
+            else                                         { gameEnv_->action(game_release_sliding, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_DRIBBLE)    { gameEnv_->action(game_dribbling, left_team, player); if (logThis) printf("btn=DRIB "); }
-            else                                          { gameEnv_->action(game_release_dribbling, left_team, player); }
+            else                                         { gameEnv_->action(game_release_dribbling, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_SPRINT)     { gameEnv_->action(game_sprint, left_team, player); if (logThis) printf("btn=SPRINT "); }
-            else                                          { gameEnv_->action(game_release_sprint, left_team, player); }
+            else                                         { gameEnv_->action(game_release_sprint, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_SWITCH_PLAYER) { gameEnv_->action(game_switch, left_team, player); if (logThis) printf("btn=SWITCH "); }
-            else                                              { gameEnv_->action(game_release_switch, left_team, player); }
+            else                                            { gameEnv_->action(game_release_switch, left_team, player); }
 
             if (inp.buttons & dzfoot::BUTTON_KICK)       { gameEnv_->action(game_long_pass, left_team, player); if (logThis) printf("btn=KICK "); }
-            else                                          { gameEnv_->action(game_release_long_pass, left_team, player); }
+            else                                         { gameEnv_->action(game_release_long_pass, left_team, player); }
 
             if (logThis) { printf("\n"); fflush(stdout); }
         }

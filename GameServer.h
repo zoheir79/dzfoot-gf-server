@@ -148,6 +148,11 @@ private:
     std::mutex inputMutex_;
     std::queue<PlayerInputPacket> inputQueue_;
 
+    // Persist last applied input per (team, player) so 20 Hz client packets
+    // remain active across all 100 Hz server ticks.
+    PlayerInputPacket lastInput_[2][11];
+    bool hasLastInput_[2][11] = {};
+
     // Events tracking (score changes, etc.)
     int lastScoreA_ = 0;
     int lastScoreB_ = 0;
