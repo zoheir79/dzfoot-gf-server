@@ -119,7 +119,6 @@ private:
     void broadcastGameState();
     void updateTacticalState();
     void broadcastTacticalState();
-    void processInputs();
     void applyPendingInputs();
     void accumulateStats();
     void detectEvents();
@@ -150,8 +149,11 @@ private:
 
     // Persist last applied input per (team, player) so 20 Hz client packets
     // remain active across all 100 Hz server ticks.
-    PlayerInputPacket lastInput_[2][11];
+    PlayerInputPacket lastInput_[2][11] = {};
     bool hasLastInput_[2][11] = {};
+    int lastInputTick_[2] = {};
+    int logThrottle_ = 0;
+    int actionLogThrottle_ = 0;
 
     // Events tracking (score changes, etc.)
     int lastScoreA_ = 0;

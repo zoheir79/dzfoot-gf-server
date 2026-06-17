@@ -88,6 +88,9 @@ static void appendDefault433(std::vector<FormationEntry>& dst, bool controllable
 Server::Server(const Config& cfg) : cfg_(cfg) {
     std::memset(&currentState_, 0, sizeof(currentState_));
     std::memset(&previousState_, 0, sizeof(previousState_));
+    std::memset(lastInput_, 0, sizeof(lastInput_));
+    std::memset(hasLastInput_, 0, sizeof(hasLastInput_));
+    std::memset(lastInputTick_, 0, sizeof(lastInputTick_));
     currentState_.timer = 0.0f;
     currentState_.tick = 0;
     currentState_.gameMode = 0;
@@ -1267,13 +1270,14 @@ void Server::receiveInput(const PlayerInputPacket& input) {
     }
     std::lock_guard<std::mutex> lock(inputMutex_);
     if (inputQueue_.size() >= 64) {
+        static int dropWarn = 0;
+        if ((dropWarn++ % 50) == 0) {
+            printf("[gamestates] GF_QUEUE_OVERFLOW dropped input (queue size >= 64)\n");
+            fflush(stdout);
+        }
         inputQueue_.pop(); // drop oldest to prevent memory flood
     }
     inputQueue_.push(input);
-}
-
-void Server::processInputs() {
-    // Applied in run() loop via applyPendingInputs()
 }
 
 void Server::applyPendingInputs() {
@@ -1301,7 +1305,7 @@ void Server::applyPendingInputs() {
             if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
 
             if (hasNewest[inp.team]) {
-                newest[inp.team].buttons |= inp.buttons;
+                newest[inp.team].buttons = inp.buttons;
                 newest[inp.team].dirX = inp.dirX;
                 newest[inp.team].dirZ = inp.dirZ;
                 if (inp.clientTick > newest[inp.team].clientTick) {
@@ -1314,8 +1318,7 @@ void Server::applyPendingInputs() {
         }
     }
 
-    static int logThrottle = 0;
-    if (receivedCount > 0 && (logThrottle++ % 100) == 0) {
+    if (receivedCount > 0 && (logThrottle_++ % 100) == 0) {
         printf("[gamestates] GF_APPLY received=%d dropped=%d queue-empty=%s\n",
                receivedCount, droppedCount, inputQueue_.empty() ? "yes" : "no");
         fflush(stdout);
@@ -1326,6 +1329,11 @@ void Server::applyPendingInputs() {
         if (hasNewest[t]) {
             lastInput_[t][0] = newest[t];
             hasLastInput_[t][0] = true;
+            lastInputTick_[t] = static_cast<int>(tickCounter_);
+        }
+        // Auto-release after 10 ticks (~100 ms) of no new input
+        if (hasLastInput_[t][0] && (tickCounter_ - lastInputTick_[t]) > 10) {
+            hasLastInput_[t][0] = false;
         }
         if (!hasLastInput_[t][0]) continue;
 
@@ -1335,10 +1343,19 @@ void Server::applyPendingInputs() {
             // The engine auto-selects the active player (e.g. taker during set piece),
             // so we read the active flag (0x04) from the last broadcast state.
             int player = 0;
+            bool foundActive = false;
             for (int i = 0; i < 11; ++i) {
                 if (currentState_.players[t * 11 + i].flags & 0x04) {
                     player = i;
+                    foundActive = true;
                     break;
+                }
+            }
+            if (!foundActive) {
+                static int fallbackWarn = 0;
+                if ((fallbackWarn++ % 100) == 0) {
+                    printf("[gamestates] GF_WARN t=%d no active player found, falling back to player=0\n", t);
+                    fflush(stdout);
                 }
             }
 
@@ -1357,8 +1374,7 @@ void Server::applyPendingInputs() {
             float lenSq = engineX*engineX + engineY*engineY;
             if (lenSq > 1.0f) { float inv = 1.0f/std::sqrt(lenSq); engineX *= inv; engineY *= inv; }
 
-            static int actionLogThrottle = 0;
-            bool logThis = (actionLogThrottle++ % 200) == 0;
+            bool logThis = (actionLogThrottle_++ % 200) == 0;
             if (logThis) {
                 printf("[gamestates] GF_ACTION t=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
                        t, player, engineX, engineY, inp.buttons);
