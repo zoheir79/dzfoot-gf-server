@@ -426,7 +426,6 @@ void Server::run() {
             applyPendingInputs();
             gameEnv_->step();
             ++tickCounter_;
-            gameEnv_->reset_inputs();
         } catch (const std::exception& e) {
             std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
             if (cfg_.redis && cfg_.redis->isConfigured()) {
@@ -1268,74 +1267,61 @@ void Server::receiveInput(const PlayerInputPacket& input) {
             fflush(stdout);
         }
     }
-    std::lock_guard<std::mutex> lock(inputMutex_);
-    if (inputQueue_.size() >= 64) {
-        static int dropWarn = 0;
-        if ((dropWarn++ % 50) == 0) {
-            printf("[gamestates] GF_QUEUE_OVERFLOW dropped input (queue size >= 64)\n");
-            fflush(stdout);
-        }
-        inputQueue_.pop(); // drop oldest to prevent memory flood
-    }
-    inputQueue_.push(input);
+    // Store latest packet atomically; no queue, no buffering.
+    newInput_ = input;
+    hasNewInput_.store(true, std::memory_order_release);
 }
 
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
 
-    // Drain queue and keep newest input per team.
-    // We ignore playerIdx because the engine routes to the active player anyway.
-    PlayerInputPacket newest[2];
+    // Consume the single latest input packet directly (no queue, no buffering).
+    PlayerInputPacket newest[2] = {};
     bool hasNewest[2] = {};
-    int receivedCount = 0;
-    int droppedCount = 0;
 
-    {
-        std::lock_guard<std::mutex> lock(inputMutex_);
-        while (!inputQueue_.empty()) {
-            PlayerInputPacket inp = inputQueue_.front();
-            inputQueue_.pop();
-            receivedCount++;
-
-            if (inp.team > 1) { droppedCount++; continue; }
-            if (cfg_.gameMode == 2) { droppedCount++; continue; }
-            if (cfg_.gameMode == 1 && inp.team == 1) { droppedCount++; continue; }
-            int player = static_cast<int>(inp.playerIdx);
-            if (player < 0 || player > 10) { droppedCount++; continue; }
-            if (!std::isfinite(inp.dirX) || !std::isfinite(inp.dirZ)) { droppedCount++; continue; }
-
-            if (hasNewest[inp.team]) {
-                newest[inp.team].buttons = inp.buttons;
-                newest[inp.team].dirX = inp.dirX;
-                newest[inp.team].dirZ = inp.dirZ;
-                if (inp.clientTick > newest[inp.team].clientTick) {
-                    newest[inp.team].clientTick = inp.clientTick;
-                }
-            } else {
-                newest[inp.team] = inp;
-                hasNewest[inp.team] = true;
+    if (hasNewInput_.exchange(false, std::memory_order_acquire)) {
+        int t = newInput_.team;
+        if (t <= 1) {
+            if (std::isfinite(newInput_.dirX) && std::isfinite(newInput_.dirZ)) {
+                newest[t] = newInput_;
+                hasNewest[t] = true;
             }
         }
     }
 
-    if (receivedCount > 0 && (logThrottle_++ % 100) == 0) {
-        printf("[gamestates] GF_APPLY received=%d dropped=%d queue-empty=%s\n",
-               receivedCount, droppedCount, inputQueue_.empty() ? "yes" : "no");
-        fflush(stdout);
-    }
-
     for (int t = 0; t < 2; ++t) {
+        // Force-assign the piece taker to the human gamer. Team::Process()
+        // reassigns the human to designatedTeamPossessionPlayer (players.at(0))
+        // which is NOT the taker. Without this, the human would control the
+        // wrong player and never be able to trigger the set piece.
+        gameEnv_->assignPieceTakerToHuman(t);
+
         // Update persistent state if a new packet arrived, otherwise reuse lastInput_.
         if (hasNewest[t]) {
             lastInput_[t][0] = newest[t];
             hasLastInput_[t][0] = true;
             lastInputTick_[t] = static_cast<int>(tickCounter_);
         }
-        // Auto-release after 10 ticks (~100 ms) of no new input
-        if (hasLastInput_[t][0] && (tickCounter_ - lastInputTick_[t]) > 10) {
+        // Auto-release after 100 ticks (~1 second) of no new input.
+        // With 100 Hz client this should never trigger during normal play.
+        if (hasLastInput_[t][0] && (tickCounter_ - lastInputTick_[t]) > 100) {
             hasLastInput_[t][0] = false;
         }
-        if (!hasLastInput_[t][0]) continue;
+        if (!hasLastInput_[t][0]) {
+            // Explicitly release all buttons when input times out.
+            // This prevents stuck inputs if the client disconnects.
+            bool left_team = (t == 0);
+            int player = 0;
+            gameEnv_->action(game_release_short_pass, left_team, player);
+            gameEnv_->action(game_release_high_pass, left_team, player);
+            gameEnv_->action(game_release_shot, left_team, player);
+            gameEnv_->action(game_release_sliding, left_team, player);
+            gameEnv_->action(game_release_dribbling, left_team, player);
+            gameEnv_->action(game_release_sprint, left_team, player);
+            gameEnv_->action(game_release_long_pass, left_team, player);
+            gameEnv_->action(game_idle, left_team, player);
+            continue;
+        }
 
             const PlayerInputPacket& inp = lastInput_[t][0];
             bool left_team = (t == 0);

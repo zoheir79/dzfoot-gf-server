@@ -8,6 +8,7 @@
 #include "menu/menutask.hpp"
 #include "onthepitch/match.hpp"
 #include "onthepitch/team.hpp"
+#include "onthepitch/teamAIcontroller.hpp"
 #include "onthepitch/player/player.hpp"
 #include "onthepitch/ball.hpp"
 #include "onthepitch/referee.hpp"
@@ -216,5 +217,18 @@ bool GameEnv::is_in_set_piece() const {
   Match* match = dzfootEnv_->GetMatch();
   if (!match) return false;
   return match->IsInSetPiece();
+}
+
+void GameEnv::assignPieceTakerToHuman(int team) {
+  if (!dzfootEnv_) return;
+  Match* match = dzfootEnv_->GetMatch();
+  if (!match) return;
+  if (!match->IsInSetPiece()) return;
+  Team* t = match->GetTeam(team);
+  if (!t) return;
+  Player* pieceTaker = t->GetController()->GetPieceTaker();
+  if (pieceTaker && !t->IsHumanControlled(pieceTaker->GetID())) {
+    t->SelectPlayer(pieceTaker);
+  }
 }
 

@@ -4,8 +4,6 @@
 #include <cstdint>
 #include <vector>
 #include <chrono>
-#include <queue>
-#include <mutex>
 #include <array>
 #include <memory>
 #include "MatchSetup.h"
@@ -144,10 +142,13 @@ private:
     uint64_t baseTimestampUs_ = 0;
 
     GameEnv* gameEnv_ = nullptr;
-    std::mutex inputMutex_;
-    std::queue<PlayerInputPacket> inputQueue_;
 
-    // Persist last applied input per (team, player) so 20 Hz client packets
+    // Latest input received from network (atomic flag, single latest packet).
+    // No queue: we always consume the most recent input directly.
+    std::atomic<bool> hasNewInput_{false};
+    PlayerInputPacket newInput_{};
+
+    // Persist last applied input per (team, player) so client packets
     // remain active across all 100 Hz server ticks.
     PlayerInputPacket lastInput_[2][11] = {};
     bool hasLastInput_[2][11] = {};

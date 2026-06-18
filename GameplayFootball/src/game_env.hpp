@@ -86,6 +86,10 @@ class GameEnv {
   // Helpers for server-side set-piece management
   bool is_in_set_piece() const;
 
+  // Force-assign the piece taker to the human gamer before applying input.
+  // This must happen before HumanController::Process() reads buttons.
+  void assignPieceTakerToHuman(int team);
+
   // Apply custom formations from scenario_config to the live match.
   // Must be called after start_game() (Match exists) and before the loop.
   void apply_formations();

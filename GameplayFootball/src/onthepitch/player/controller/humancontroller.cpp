@@ -234,7 +234,13 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
   }
 
   // set piece?
-  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) || match->GetBallRetainer() == player)) ||
+  bool justPressedShortPass = hid->GetButton(e_ButtonFunction_ShortPass) && !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass);
+  bool justPressedLongPass  = hid->GetButton(e_ButtonFunction_LongPass)  && !hid->GetPreviousButtonState(e_ButtonFunction_LongPass);
+  bool justPressedHighPass  = hid->GetButton(e_ButtonFunction_HighPass)  && !hid->GetPreviousButtonState(e_ButtonFunction_HighPass);
+  bool justPressedShot      = hid->GetButton(e_ButtonFunction_Shot)      && !hid->GetPreviousButtonState(e_ButtonFunction_Shot);
+  bool justPressedAction    = justPressedShortPass || justPressedLongPass || justPressedHighPass || justPressedShot;
+
+  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) || match->GetBallRetainer() == player) && !justPressedAction) ||
       (match->IsInSetPiece() && team->GetController()->GetPieceTaker() != player && match->GetBallRetainer() == 0)) {
     _SetPieceCommand(commandQueue);
     //if (team->GetController()->GetPieceTaker() == player) printf("waiting to take set piece!\n");
@@ -366,6 +372,10 @@ void HumanController::Process() {
     float possessionContext = possessionAmount - 1.0f;
     if (match->GetDesignatedPossessionPlayer() == player) {
       possessionContext = 1.0f; // new (keeper was allowed doing slidings before free kick sometimes lol, sign something was wrong)
+    } else if (match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player) {
+      // During set pieces, the piece taker must always have offensive buttons
+      // available regardless of possession context (needed for kickoff, throw-in, etc.)
+      possessionContext = 1.0f;
     } else {
       // in situations where we aren't the designated player, we sometimes still want to do ball stuff, because we could try to extend our leg to pass, for example
       if (hid->GetButton(e_ButtonFunction_ShortPass)) possessionContext += 0.15f; // todo: bug: the logic of these weighings are based on the default 'pes' button settings.. need to take into account the defensive function of the buttons as well
