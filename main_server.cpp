@@ -105,6 +105,17 @@ static GameServer::PlayerInputPacket parseInputPacket(const uint8_t* data, size_
         std::memset(&inp, 0, sizeof(inp));
         return inp;
     }
+    // Hex dump raw bytes around buttons field (offsets 18-24) for diagnosis
+    if (inp.buttons != 0 || (inp.dirX != 0.0f || inp.dirZ != 0.0f)) {
+        printf("[gamestates] RAW_HEX bytes[18..25]=%02X%02X %02X%02X %02X%02X %02X%02X "
+               "offsetof_buttons=%zu offsetof_player=%zu offsetof_team=%zu sizeof_pkt=%zu\n",
+               data[18], data[19], data[20], data[21], data[22], data[23], data[24], data[25],
+               offsetof(dzfoot::PlayerInputPacket, buttons),
+               offsetof(dzfoot::PlayerInputPacket, playerIdx),
+               offsetof(dzfoot::PlayerInputPacket, team),
+               sizeof(dzfoot::PlayerInputPacket));
+        fflush(stdout);
+    }
     return inp;
 }
 

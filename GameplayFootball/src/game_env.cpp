@@ -64,6 +64,7 @@ SharedInfo GameEnv::get_info() {
   info.ball_owned_player = ms.ball_owned_player;
   info.left_goals = ms.score[0];
   info.right_goals = ms.score[1];
+  info.match_time_ms = ms.matchTime_ms;
 
   // Fill player info
   Match* match = dzfootEnv_->GetMatch();
@@ -96,6 +97,18 @@ SharedInfo GameEnv::get_info() {
 
 void GameEnv::reset_inputs() {
   if (dzfootEnv_) dzfootEnv_->ResetInputs();
+}
+
+void GameEnv::set_direction(bool left_team, int player, float dx, float dy) {
+  if (!dzfootEnv_) return;
+  int team = left_team ? 0 : 1;
+  dzfootEnv_->SetDirection(team, player, dx, dy);
+}
+
+void GameEnv::set_button(bool left_team, int player, int buttonFunc, bool state) {
+  if (!dzfootEnv_) return;
+  int team = left_team ? 0 : 1;
+  dzfootEnv_->SetButton(team, player, buttonFunc, state);
 }
 
 void GameEnv::apply_formations() {

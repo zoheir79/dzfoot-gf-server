@@ -35,6 +35,7 @@ extern boost::shared_ptr<Scene3D> scene3D;
 extern boost::shared_ptr<GameTask> gameTask;
 extern boost::shared_ptr<MenuTask> menuTask;
 extern std::vector<IHIDevice*> controllers;
+extern bool superDebug;  // defined in main.cpp
 
 #include "../onthepitch/match.hpp"
 #include "../onthepitch/team.hpp"
@@ -58,6 +59,11 @@ DZFootEnv::~DZFootEnv() {
 
 void DZFootEnv::Initialize(int resX, int resY) {
   if (initialized_) return;
+
+  // Headless mode: use SuperDebug to load pitchonly.object instead of full stadium.
+  // The full stadium (test.object) is a large ASE file that takes ~15s to parse
+  // and split into culling geometry. In headless we only need the pitch.
+  superDebug = true;
 
   // Config properties — assign to the global config variable defined in main.cpp
   config = new Properties();

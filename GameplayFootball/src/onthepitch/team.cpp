@@ -536,7 +536,16 @@ void Team::UpdateSwitch() {
 
   if (match->IsInPlay() && humanGamers.size() > 0) {
     if (!IsHumanControlled(designatedTeamPossessionPlayer->GetID()) && (designatedTeamPossessionPlayer->HasUniquePossession() || match->IsInSetPiece())) {
-      if (designatedTeamPossessionPlayer != GetGoalie()) {
+      // During set pieces, don't override the piece taker's human control.
+      // assignPieceTakerToHuman() already selected the piece taker before step();
+      // switching to designatedTeamPossessionPlayer here makes the piece taker
+      // AI-controlled, preventing the human from triggering the set piece.
+      bool pieceTakerIsHuman = false;
+      if (match->IsInSetPiece()) {
+        Player* pieceTaker = GetController()->GetPieceTaker();
+        pieceTakerIsHuman = pieceTaker && IsHumanControlled(pieceTaker->GetID());
+      }
+      if (!pieceTakerIsHuman && designatedTeamPossessionPlayer != GetGoalie()) {
         SelectPlayer(designatedTeamPossessionPlayer);
       }
     }

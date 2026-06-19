@@ -240,7 +240,7 @@ void HumanController::RequestCommand(PlayerCommandQueue &commandQueue) {
   bool justPressedShot      = hid->GetButton(e_ButtonFunction_Shot)      && !hid->GetPreviousButtonState(e_ButtonFunction_Shot);
   bool justPressedAction    = justPressedShortPass || justPressedLongPass || justPressedHighPass || justPressedShot;
 
-  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton)) || match->GetBallRetainer() == player) && !justPressedAction) ||
+  if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player && (actionMode != 2 || (actionMode == 2 && hid->GetButton(actionButton) && gauge_ms <= 500) || match->GetBallRetainer() == player) && !justPressedAction) ||
       (match->IsInSetPiece() && team->GetController()->GetPieceTaker() != player && match->GetBallRetainer() == 0)) {
     _SetPieceCommand(commandQueue);
     //if (team->GetController()->GetPieceTaker() == player) printf("waiting to take set piece!\n");
@@ -467,6 +467,16 @@ void HumanController::Process() {
       // button released, stay in this actionMode until actionBufferTime_ms becomes too big
       actionBufferTime_ms += 10;
     }
+  }
+
+  // Diagnostic logging during set pieces
+  if (match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player) {
+    printf("[HC] SP actMode=%d gauge=%d actBtn=%d shortPass=%d prevShortPass=%d justPressed=%d\n",
+           actionMode, gauge_ms, (int)actionButton,
+           (int)hid->GetButton(e_ButtonFunction_ShortPass),
+           (int)hid->GetPreviousButtonState(e_ButtonFunction_ShortPass),
+           (int)(hid->GetButton(e_ButtonFunction_ShortPass) && !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass)));
+    fflush(stdout);
   }
 
   if (hid->GetButton(e_ButtonFunction_Switch) && hasPossession) team->GetController()->ApplyAttackingRun();

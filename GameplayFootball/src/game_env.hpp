@@ -63,6 +63,7 @@ struct SharedInfo {
   int ball_owned_player = -1;
   int left_goals = 0;
   int right_goals = 0;
+  unsigned long match_time_ms = 0;  // match internal time (only advances during play, not set pieces)
   std::vector<PlayerInfo> left_team;
   std::vector<PlayerInfo> right_team;
 };
@@ -82,6 +83,13 @@ class GameEnv {
   SharedInfo get_info();
   void action(int action, bool left_team, int player);
   void reset_inputs();
+
+  // Direct passthrough to DZFootEnv for continuous analog direction and
+  // raw button function control.  These bypass the discrete action() enum
+  // so the headless server can feed the same analog values that a desktop
+  // HIDKeyboard/HIDGamepad would produce via GetDirection()/SetButton().
+  void set_direction(bool left_team, int player, float dx, float dy);
+  void set_button(bool left_team, int player, int buttonFunc, bool state);
 
   // Helpers for server-side set-piece management
   bool is_in_set_piece() const;

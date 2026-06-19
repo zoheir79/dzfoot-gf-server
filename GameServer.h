@@ -148,6 +148,10 @@ private:
     std::atomic<bool> hasNewInput_{false};
     PlayerInputPacket newInput_{};
 
+    // Accumulate button presses via OR so rapid taps (<10ms) are not lost
+    // when the client sends DOWN+UP between two server ticks.
+    std::atomic<uint16_t> accumulatedButtons_[2] = {};
+
     // Persist last applied input per (team, player) so client packets
     // remain active across all 100 Hz server ticks.
     PlayerInputPacket lastInput_[2][11] = {};
