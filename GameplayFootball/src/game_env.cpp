@@ -116,6 +116,12 @@ void GameEnv::apply_formations() {
   Match* match = dzfootEnv_->GetMatch();
   if (!match) return;
 
+  // Save active set-piece state before ResetSituation() wipes taker/setPieceType
+  Referee* referee = match->GetReferee();
+  bool spActive = referee && referee->GetBuffer().active;
+  e_SetPiece spType = spActive ? referee->GetBuffer().desiredSetPiece : e_SetPiece_None;
+  int spTeamID = spActive ? referee->GetBuffer().teamID : -1;
+
   for (int t = 0; t < 2; t++) {
     Team* team = match->GetTeam(t);
     if (!team) continue;
@@ -135,6 +141,15 @@ void GameEnv::apply_formations() {
   Ball* ball = match->GetBall();
   Vector3 ballPos = ball ? ball->Predict(0) : Vector3(0, 0, 0);
   match->ResetSituation(ballPos);
+
+  // Restore set-piece taker so the human can trigger kickoff/throw-in/etc.
+  if (spActive) {
+    printf("[setpiece_track] GameEnv::apply_formations restoring set-piece type=%d teamID=%d after ResetSituation\n",
+           (int)spType, spTeamID);
+    fflush(stdout);
+    match->GetTeam(0)->GetController()->PrepareSetPiece(spType, spTeamID);
+    match->GetTeam(1)->GetController()->PrepareSetPiece(spType, spTeamID);
+  }
 }
 
 void GameEnv::action(int action, bool left_team, int player) {
