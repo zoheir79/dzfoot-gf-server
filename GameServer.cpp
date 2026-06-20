@@ -118,9 +118,11 @@ void Server::sendMatchSetup() {
     copyString(setup.teamBName, sizeof(setup.teamBName), cfg_.teamB);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
     setup.playerCount = 22; // 11 per team
+#if 0  // Disabled to reduce noise
     printf("[gamestates] GF_SETUP teamA=%s teamB=%s duration=%u players=%u\n",
            setup.teamAName, setup.teamBName, setup.durationMinutes, setup.playerCount);
     fflush(stdout);
+#endif
     {
         // Simple string hash (uint8_t) — 256 possible values. Collisions are
         // extremely unlikely for the small set of stadium names DZFoot uses.
@@ -364,6 +366,7 @@ void Server::run() {
         cfg_.redis->publish("gf.ready", cfg_.roomId);
     }
 
+#if 0  // Disabled to reduce noise; use [setpiece_track] logs for set-piece state
     {
         Match* match = (gameEnv_->context && gameEnv_->context->gameTask) ? gameEnv_->context->gameTask->GetMatch() : nullptr;
         int gameMode = match ? match->GetMatchPhase() : -1;
@@ -391,6 +394,7 @@ void Server::run() {
         }
         std::cout << "[gamestates] GF_STARTED" << std::endl;
     }
+#endif
 
     baseTimestampUs_ = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -638,6 +642,7 @@ void Server::updateState() {
         fillTeam(0, 0);
         fillTeam(1, 11);
 
+#if 0  // Disabled to reduce noise; use [setpiece_track] logs for set-piece state
         // Server-side position debug: log every 100 ticks to verify engine movement
         if (tickCounter_ % 100 == 0) {
             Match* m = match;
@@ -664,6 +669,7 @@ void Server::updateState() {
             printf("%s\n", pbuf);
             fflush(stdout);
         }
+#endif
 
         // --- Officials (referee + 2 linesmen) ---
         if (match) {
@@ -1234,12 +1240,14 @@ void Server::broadcastGameState() {
     std::memcpy(gsBuf.data() + 36, &currentState_, sizeof(currentState_));
     cfg_.redis->publishBinary("gf.gamestate", gsBuf.data(), gsBuf.size());
 
+#if 0  // Disabled to reduce noise
     static int bcLogThrottle = 0;
     if ((bcLogThrottle++ % 20) == 0) {
         printf("[gamestates] GF_BROADCAST tick=%u gs_size=%zu events=%zu room=%s\n",
                currentState_.tick, gsBuf.size(), eventQueue_.size(), cfg_.roomId.c_str());
         fflush(stdout);
     }
+#endif
 
     for (auto& ev : eventQueue_) {
         ev.header.magic   = dzfoot::DZ_MAGIC;
@@ -1264,11 +1272,11 @@ void Server::receiveInput(const PlayerInputPacket& input) {
                input.header.magic, input.header.version);
         fflush(stdout);
     } else {
+        // Still log idle/keepalive inputs occasionally so we can verify 0x0000 reaches GF
         static int recvLogThrottle = 0;
-        if ((recvLogThrottle++ % 20) == 0) {
-            printf("[gamestates] GF_IN team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X magic=0x%08X ver=%u\n",
-                   input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons,
-                   input.header.magic, input.header.version);
+        if ((recvLogThrottle++ % 60) == 0) {
+            printf("[gamestates] GF_IN_IDLE team=%u player=%u dir=(%.3f,%.3f) buttons=0x%04X\n",
+                   input.team, input.playerIdx, input.dirX, input.dirZ, input.buttons);
             fflush(stdout);
         }
     }
@@ -1385,13 +1393,14 @@ void Server::applyPendingInputs() {
 
             // Unthrottled logging during set pieces to trace button state
             bool inSetPiece = gameEnv_ && gameEnv_->is_in_set_piece();
-            bool logThis = (actionLogThrottle_++ % 200) == 0;
             if (inSetPiece) {
                 printf("[gamestates] GF_SP t=%d hasNew=%d inp.btns=0x%04X acc.btns=0x%04X eff.btns=0x%04X tick=%d lastTick=%d\n",
                        t, (int)hasNewest[t], inp.buttons, accButtons[t], effectiveButtons,
                        (int)tickCounter_, lastInputTick_[t]);
                 fflush(stdout);
             }
+#if 0  // Disabled GF_ACTION to reduce noise; keep GF_SP for set-piece buttons
+            bool logThis = (actionLogThrottle_++ % 200) == 0;
             if (logThis) {
                 printf("[gamestates] GF_ACTION t=%d ctrl_slot=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
                        t, player, activeP, engineX, engineY, effectiveButtons);
@@ -1496,6 +1505,7 @@ void Server::applyPendingInputs() {
             }
 
             if (logThis) { printf("\n"); fflush(stdout); }
+#endif
     }
 }
 

@@ -105,6 +105,7 @@ static GameServer::PlayerInputPacket parseInputPacket(const uint8_t* data, size_
         std::memset(&inp, 0, sizeof(inp));
         return inp;
     }
+#if 0  // Disabled to reduce noise
     // Hex dump raw bytes around buttons field (offsets 18-24) for diagnosis
     if (inp.buttons != 0 || (inp.dirX != 0.0f || inp.dirZ != 0.0f)) {
         printf("[gamestates] RAW_HEX bytes[18..25]=%02X%02X %02X%02X %02X%02X %02X%02X "
@@ -116,6 +117,7 @@ static GameServer::PlayerInputPacket parseInputPacket(const uint8_t* data, size_
                sizeof(dzfoot::PlayerInputPacket));
         fflush(stdout);
     }
+#endif
     return inp;
 }
 
@@ -159,12 +161,14 @@ int main(int argc, char* argv[]) {
 
     GameServer::Server server(gscfg);
 
+#if 0  // Disabled to reduce noise
     std::cout << "[gamestates] GF_SERVER_START room=" << args.roomId
               << " mode=" << (int)args.gameMode
               << " teamA=" << args.teamA
               << " teamB=" << args.teamB
               << " redis=" << (args.redisUrl.empty() ? "none" : "connected")
               << std::endl;
+#endif
 
     // 3. Start input listener thread (Redis subscription for player inputs)
     std::string roomId = args.roomId;

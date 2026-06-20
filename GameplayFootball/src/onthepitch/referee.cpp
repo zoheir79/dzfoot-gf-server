@@ -22,6 +22,9 @@ Referee::Referee(Match *match) : match(match) {
   buffer.taker = 0;
   buffer.endPhase = true;
   buffer.active = true;
+  printf("[setpiece_track] Referee ctor desiredSetPiece=%d teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu active=%d endPhase=%d\n",
+         (int)buffer.desiredSetPiece, buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime, (int)buffer.active, (int)buffer.endPhase);
+  fflush(stdout);
 
   foul.foulPlayer = 0;
   foul.foulType = 0;
@@ -68,6 +71,14 @@ Referee::~Referee() {
 void Referee::Process() {
   //printf("%i", match->GetMatchState());
 
+  if (match->IsInSetPiece() || buffer.active || afterSetPieceRelaxTime_ms > 0) {
+    printf("[setpiece_track] Referee::Process t=%lu inPlay=%d inSetPiece=%d buffer.active=%d desiredSetPiece=%d teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu endPhase=%d afterSetPieceRelaxTime_ms=%d\n",
+           match->GetActualTime_ms(), (int)match->IsInPlay(), (int)match->IsInSetPiece(), (int)buffer.active,
+           (int)buffer.desiredSetPiece, buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+           (int)buffer.endPhase, afterSetPieceRelaxTime_ms);
+    fflush(stdout);
+  }
+
   if (match->IsInPlay() && !match->IsInSetPiece()) {
 
     Vector3 ballPos = match->GetBall()->Predict(0);
@@ -95,6 +106,10 @@ void Referee::Process() {
         buffer.restartPos = Vector3(0);
         buffer.active = true;
         buffer.endPhase = true;
+        printf("[setpiece_track] Referee BUFFER_ACTIVATE (phase end / goal) t=%lu desiredSetPiece=KickOff teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu endPhase=1 inPlay=%d inSetPiece=%d\n",
+               match->GetActualTime_ms(), buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+               (int)match->IsInPlay(), (int)match->IsInSetPiece());
+        fflush(stdout);
         if (match->GetMatchPhase() == e_MatchPhase_1stHalf || match->GetMatchPhase() == e_MatchPhase_1stExtraTime) {
           buffer.teamID = 1;
         } else {
@@ -157,6 +172,11 @@ void Referee::Process() {
         }
 
         buffer.active = true;
+        printf("[setpiece_track] Referee BUFFER_ACTIVATE (out of bounds length) t=%lu desiredSetPiece=%d teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu restartPos=(%.2f,%.2f,%.2f) inPlay=%d inSetPiece=%d\n",
+               match->GetActualTime_ms(), (int)buffer.desiredSetPiece, buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+               buffer.restartPos.coords[0], buffer.restartPos.coords[1], buffer.restartPos.coords[2],
+               (int)match->IsInPlay(), (int)match->IsInSetPiece());
+        fflush(stdout);
       }
     }
 
@@ -180,6 +200,11 @@ void Referee::Process() {
           if (ballPos.coords[1] <= 0) buffer.restartPos.coords[1] = -pitchHalfH;
           buffer.restartPos.coords[2] = 0;
           buffer.active = true;
+          printf("[setpiece_track] Referee BUFFER_ACTIVATE (sideline) t=%lu desiredSetPiece=%d teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu restartPos=(%.2f,%.2f,%.2f) inPlay=%d inSetPiece=%d\n",
+                 match->GetActualTime_ms(), (int)buffer.desiredSetPiece, buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+                 buffer.restartPos.coords[0], buffer.restartPos.coords[1], buffer.restartPos.coords[2],
+                 (int)match->IsInPlay(), (int)match->IsInSetPiece());
+          fflush(stdout);
         }
       }
     }
@@ -224,6 +249,8 @@ void Referee::Process() {
         // blow whistle and wait for set piece taker to touch the ball
         whistle[1]->SetGain(0.3 * GetConfiguration()->GetReal("audio_volume", 0.5));
         whistle[1]->Poke(e_SystemType_Audio);
+        printf("[setpiece_track] Referee START_SET_PIECE t=%lu startTime reached, calling match->StartPlay() + match->StartSetPiece()\n", match->GetActualTime_ms());
+        fflush(stdout);
         match->StartPlay();
         match->StartSetPiece();
       }
@@ -232,8 +259,19 @@ void Referee::Process() {
 
   if (match->IsInSetPiece()) {
     // check if set piece has been taken
-    if (buffer.taker->TouchAnim() && !buffer.taker->TouchPending()) {
+    bool takerValid = buffer.taker != 0;
+    bool touchAnim = takerValid && buffer.taker->TouchAnim();
+    bool touchPending = takerValid && buffer.taker->TouchPending();
+    int currentFrame = takerValid ? buffer.taker->GetCurrentFrame() : -999;
+    int touchFrame = takerValid ? buffer.taker->GetTouchFrame() : -999;
+    printf("[setpiece_track] Referee CHECK_TAKEN t=%lu inSetPiece=1 takerValid=%d TouchAnim=%d TouchPending=%d currentFrame=%d touchFrame=%d condition=%d\n",
+           match->GetActualTime_ms(), (int)takerValid, (int)touchAnim, (int)touchPending,
+           currentFrame, touchFrame, (int)(touchAnim && !touchPending));
+    fflush(stdout);
+    if (touchAnim && !touchPending) {
       buffer.active = false;
+      printf("[setpiece_track] Referee STOP_SET_PIECE t=%lu condition met (TouchAnim=1 && !TouchPending), calling match->StopSetPiece()\n", match->GetActualTime_ms());
+      fflush(stdout);
       match->StopSetPiece();
       match->GetTeam(0)->GetController()->PrepareSetPiece(e_SetPiece_None);
       match->GetTeam(1)->GetController()->PrepareSetPiece(e_SetPiece_None);
@@ -253,12 +291,21 @@ void Referee::Process() {
 void Referee::PrepareSetPiece(e_SetPiece setPiece) {
   // position players for set piece situation
 
+  printf("[setpiece_track] Referee::PrepareSetPiece t=%lu setPiece=%d teamID=%d buffer.taker before=%p\n",
+         match->GetActualTime_ms(), (int)setPiece, buffer.teamID, (void*)buffer.taker);
+  fflush(stdout);
+
   match->ResetSituation(buffer.restartPos);
 
   match->GetTeam(0)->GetController()->PrepareSetPiece(setPiece, buffer.teamID);
   match->GetTeam(1)->GetController()->PrepareSetPiece(setPiece, buffer.teamID);
 
   buffer.taker = match->GetTeam(buffer.teamID)->GetController()->GetPieceTaker();
+
+  printf("[setpiece_track] Referee::PrepareSetPiece t=%lu setPiece=%d teamID=%d buffer.taker after=%p takerID=%d takerRole=%d\n",
+         match->GetActualTime_ms(), (int)setPiece, buffer.teamID, (void*)buffer.taker,
+         buffer.taker ? buffer.taker->GetID() : -1, buffer.taker ? (int)buffer.taker->GetFormationEntry().role : -1);
+  fflush(stdout);
 }
 
 void Referee::AlterSetPiecePrepareTime(unsigned long newTime_ms) {
@@ -290,6 +337,11 @@ void Referee::BallTouched() {
           buffer.teamID = abs(lastTouchTeamID - 1);
           buffer.active = true;
           match->SpamMessage("offside!");
+          printf("[setpiece_track] Referee BUFFER_ACTIVATE (offside) t=%lu desiredSetPiece=FreeKick teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu restartPos=(%.2f,%.2f,%.2f) inPlay=%d inSetPiece=%d\n",
+                 match->GetActualTime_ms(), buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+                 buffer.restartPos.coords[0], buffer.restartPos.coords[1], buffer.restartPos.coords[2],
+                 (int)match->IsInPlay(), (int)match->IsInSetPiece());
+          fflush(stdout);
           break;
         } else break;
       }
@@ -426,6 +478,11 @@ bool Referee::CheckFoul() {
     }
     buffer.teamID = foul.foulVictim->GetTeam()->GetID();
     buffer.active = true;
+    printf("[setpiece_track] Referee BUFFER_ACTIVATE (foul) t=%lu desiredSetPiece=%d teamID=%d stopTime=%lu prepareTime=%lu startTime=%lu restartPos=(%.2f,%.2f,%.2f) foulType=%d inPlay=%d inSetPiece=%d\n",
+           match->GetActualTime_ms(), (int)buffer.desiredSetPiece, buffer.teamID, buffer.stopTime, buffer.prepareTime, buffer.startTime,
+           buffer.restartPos.coords[0], buffer.restartPos.coords[1], buffer.restartPos.coords[2], foul.foulType,
+           (int)match->IsInPlay(), (int)match->IsInSetPiece());
+    fflush(stdout);
     std::string spamMessage = "foul!";
     if (foul.foulType == 2) {
       spamMessage.append(" yellow card");

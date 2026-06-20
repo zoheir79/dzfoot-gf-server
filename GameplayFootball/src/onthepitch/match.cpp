@@ -276,6 +276,8 @@ Match::Match(MatchData *matchData, const std::vector<IHIDevice*> &controllers) :
   pause = false;
   inPlay = false;
   inSetPiece = false;
+  printf("[setpiece_track] Match init inSetPiece=0 inPlay=0 t=%lu matchPhase=%d\n", actualTime_ms, matchPhase);
+  fflush(stdout);
   goalScored = false;
   ballIsInGoal = false;
   lastGoalTeamID = 0;

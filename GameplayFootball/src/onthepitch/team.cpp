@@ -541,12 +541,28 @@ void Team::UpdateSwitch() {
       // switching to designatedTeamPossessionPlayer here makes the piece taker
       // AI-controlled, preventing the human from triggering the set piece.
       bool pieceTakerIsHuman = false;
+      Player* pieceTaker = 0;
       if (match->IsInSetPiece()) {
-        Player* pieceTaker = GetController()->GetPieceTaker();
+        pieceTaker = GetController()->GetPieceTaker();
         pieceTakerIsHuman = pieceTaker && IsHumanControlled(pieceTaker->GetID());
+      }
+      if (match->IsInSetPiece()) {
+        printf("[setpiece_track] Team::Process auto-switch check team=%d t=%lu inSetPiece=%d designatedHuman=%d hasUniquePossession=%d pieceTaker=%p takerID=%d takerIsHuman=%d pieceTakerIsHuman=%d\n",
+               GetID(), match->GetActualTime_ms(), (int)match->IsInSetPiece(),
+               (int)IsHumanControlled(designatedTeamPossessionPlayer->GetID()),
+               (int)designatedTeamPossessionPlayer->HasUniquePossession(),
+               (void*)pieceTaker, pieceTaker ? pieceTaker->GetID() : -1,
+               pieceTaker ? (int)IsHumanControlled(pieceTaker->GetID()) : -1,
+               (int)pieceTakerIsHuman);
+        fflush(stdout);
       }
       if (!pieceTakerIsHuman && designatedTeamPossessionPlayer != GetGoalie()) {
         SelectPlayer(designatedTeamPossessionPlayer);
+        if (match->IsInSetPiece()) {
+          printf("[setpiece_track] Team::Process auto-switch EXECUTED team=%d t=%lu selected designatedTeamPossessionPlayer=%d\n",
+                 GetID(), match->GetActualTime_ms(), designatedTeamPossessionPlayer->GetID());
+          fflush(stdout);
+        }
       }
     }
   }

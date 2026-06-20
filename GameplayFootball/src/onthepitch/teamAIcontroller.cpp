@@ -40,6 +40,8 @@ TeamAIController::TeamAIController(Team *team) : team(team) {
   width = 0.95f;
 
   setPieceType = e_SetPiece_None;
+  printf("[setpiece_track] TeamAIController ctor team=%d setPieceType=None(%d)\n", team->GetID(), (int)setPieceType);
+  fflush(stdout);
 
   offsideTrapX = 0;
 
@@ -668,7 +670,12 @@ void TeamAIController::ApplyOffsideTrap(Vector3 &position) const {
 }
 
 void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
+  e_SetPiece oldSetPieceType = setPieceType;
   setPieceType = setPiece;
+
+  printf("[setpiece_track] TeamAIController::PrepareSetPiece team=%d t=%lu old=%d new=%d takerTeamID=%d\n",
+         team->GetID(), match->GetActualTime_ms(), (int)oldSetPieceType, (int)setPieceType, takerTeamID);
+  fflush(stdout);
 
   if (takerTeamID == -1) assert(setPieceType == e_SetPiece_None);
   if (setPieceType == e_SetPiece_None) return;
@@ -907,6 +914,11 @@ void TeamAIController::PrepareSetPiece(e_SetPiece setPiece, int takerTeamID) {
     }
 
   } else taker = 0;
+
+  printf("[setpiece_track] TeamAIController::PrepareSetPiece DONE team=%d t=%lu setPiece=%d taker=%p takerID=%d takerRole=%d\n",
+         team->GetID(), match->GetActualTime_ms(), (int)setPieceType, (void*)taker,
+         taker ? taker->GetID() : -1, taker ? (int)taker->GetFormationEntry().role : -1);
+  fflush(stdout);
 
   // keep distance from ball
   float minDistance = 2.0;

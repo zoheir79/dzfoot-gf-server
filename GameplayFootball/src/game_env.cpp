@@ -240,8 +240,16 @@ void GameEnv::assignPieceTakerToHuman(int team) {
   Team* t = match->GetTeam(team);
   if (!t) return;
   Player* pieceTaker = t->GetController()->GetPieceTaker();
+  printf("[setpiece_track] GameEnv::assignPieceTakerToHuman team=%d t=%lu inSetPiece=1 pieceTaker=%p takerID=%d isHuman=%d\n",
+         team, match->GetActualTime_ms(), (void*)pieceTaker,
+         pieceTaker ? pieceTaker->GetID() : -1,
+         pieceTaker ? (int)t->IsHumanControlled(pieceTaker->GetID()) : -1);
+  fflush(stdout);
   if (pieceTaker && !t->IsHumanControlled(pieceTaker->GetID())) {
     t->SelectPlayer(pieceTaker);
+    printf("[setpiece_track] GameEnv::assignPieceTakerToHuman SELECTED team=%d t=%lu takerID=%d\n",
+           team, match->GetActualTime_ms(), pieceTaker->GetID());
+    fflush(stdout);
   }
 }
 

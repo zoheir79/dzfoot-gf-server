@@ -33,6 +33,7 @@
 
 #include <boost/circular_buffer.hpp>
 
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 
@@ -136,8 +137,16 @@ class Match {
     void StopPlay() { inPlay = false; }
     bool IsInPlay() const { return inPlay; }
 
-    void StartSetPiece() { inSetPiece = true; }
-    void StopSetPiece() { inSetPiece = false; }
+    void StartSetPiece() {
+      inSetPiece = true;
+      printf("[setpiece_track] Match::StartSetPiece t=%lu inPlay=%d inSetPiece=1 caller=match\n", actualTime_ms, inPlay);
+      fflush(stdout);
+    }
+    void StopSetPiece() {
+      inSetPiece = false;
+      printf("[setpiece_track] Match::StopSetPiece t=%lu inPlay=%d inSetPiece=0 caller=match\n", actualTime_ms, inPlay);
+      fflush(stdout);
+    }
     bool IsInSetPiece() const { return inSetPiece; }
     Referee *GetReferee() { return referee; }
     Officials *GetOfficials() { return officials; }
