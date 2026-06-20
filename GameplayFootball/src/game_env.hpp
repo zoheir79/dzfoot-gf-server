@@ -98,6 +98,10 @@ class GameEnv {
   // This must happen before HumanController::Process() reads buttons.
   void assignPieceTakerToHuman(int team);
 
+  // Return the HID slot (human gamer index) currently controlling the piece taker,
+  // or 0 if none. This lets GameServer route set-piece input to the right device.
+  int get_piece_taker_hid_slot(int team) const;
+
   // Apply custom formations from scenario_config to the live match.
   // Must be called after start_game() (Match exists) and before the loop.
   void apply_formations();

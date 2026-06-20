@@ -41,7 +41,13 @@ namespace blunted {
   }
 
   void HIDRemoteController::SetButton(e_ButtonFunction buttonFunction, bool state) {
-    if (buttonFunction >= 0 && buttonFunction < e_ButtonFunction_Size) buttons_[buttonFunction] = state;
+    if (buttonFunction >= 0 && buttonFunction < e_ButtonFunction_Size) {
+      buttons_[buttonFunction] = state;
+      if (buttonFunction == e_ButtonFunction_ShortPass) {
+        printf("[HID] SetButton ShortPass=%d this=%p\n", (int)state, (void*)this);
+        fflush(stdout);
+      }
+    }
   }
 
   bool HIDRemoteController::GetPreviousButtonState(e_ButtonFunction buttonFunction) {

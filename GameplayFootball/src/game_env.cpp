@@ -268,3 +268,18 @@ void GameEnv::assignPieceTakerToHuman(int team) {
   }
 }
 
+int GameEnv::get_piece_taker_hid_slot(int team) const {
+  if (!dzfootEnv_) return 0;
+  Match* match = dzfootEnv_->GetMatch();
+  if (!match) return 0;
+  Team* t = match->GetTeam(team);
+  if (!t) return 0;
+  Player* pieceTaker = t->GetController()->GetPieceTaker();
+  if (!pieceTaker) return 0;
+  int idx = t->GetHumanGamerIndexForPlayer(pieceTaker->GetID());
+  printf("[setpiece_track] GameEnv::get_piece_taker_hid_slot team=%d takerID=%d idx=%d humanCount=%u\n",
+         team, pieceTaker->GetID(), idx, t->GetHumanGamerCount());
+  fflush(stdout);
+  return idx >= 0 ? idx : 0;
+}
+

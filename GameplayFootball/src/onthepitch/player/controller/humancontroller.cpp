@@ -471,11 +471,13 @@ void HumanController::Process() {
 
   // Diagnostic logging during set pieces
   if (match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player) {
-    printf("[HC] SP actMode=%d gauge=%d actBtn=%d shortPass=%d prevShortPass=%d justPressed=%d\n",
+    printf("[HC] SP actMode=%d gauge=%d actBtn=%d shortPass=%d prevShortPass=%d justPressed=%d hid=%p player=%d taker=%p\n",
            actionMode, gauge_ms, (int)actionButton,
            (int)hid->GetButton(e_ButtonFunction_ShortPass),
            (int)hid->GetPreviousButtonState(e_ButtonFunction_ShortPass),
-           (int)(hid->GetButton(e_ButtonFunction_ShortPass) && !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass)));
+           (int)(hid->GetButton(e_ButtonFunction_ShortPass) && !hid->GetPreviousButtonState(e_ButtonFunction_ShortPass)),
+           (void*)hid, player ? player->GetID() : -1,
+           (void*)team->GetController()->GetPieceTaker());
     fflush(stdout);
   }
 

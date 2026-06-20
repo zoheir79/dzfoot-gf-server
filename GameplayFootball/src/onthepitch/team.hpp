@@ -47,6 +47,9 @@ class Team {
     e_PlayerColor GetPlayerColor(int playerID);
     bool IsHumanControlled(int playerID);
 
+    // Returns the index in humanGamers that currently controls playerID, or -1 if none.
+    int GetHumanGamerIndexForPlayer(int playerID) const;
+
     bool HasPossession() const;
     bool HasUniquePossession() const;
     int GetTimeNeededToGetToBall_ms() const;

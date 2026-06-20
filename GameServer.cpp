@@ -1357,10 +1357,14 @@ void Server::applyPendingInputs() {
             // index 0 (controllerID 0 for team 0, playerNum for team 1) via
             // SetButton/SetDirection's idx = player + team*playerNum mapping.
             // The engine itself auto-selects which player that gamer controls
-            // (closest to ball / set-piece taker), so we always target slot 0.
-            // Routing to the active player index (e.g. 5) writes input into an
-            // unused AI controller slot, and the input is silently discarded.
+            // (closest to ball / set-piece taker), so we normally target slot 0.
+            // During a set-piece, route to the human gamer that actually controls
+            // the piece taker, otherwise the button reaches the wrong HID device.
             int player = 0;
+            if (gameEnv_ && gameEnv_->is_in_set_piece()) {
+                player = gameEnv_->get_piece_taker_hid_slot(t);
+                if (player < 0) player = 0;
+            }
             // Active player index (for logging/telemetry only).
             int activeP = -1;
             for (int i = 0; i < 11; ++i) {
@@ -1399,23 +1403,10 @@ void Server::applyPendingInputs() {
                        (int)tickCounter_, lastInputTick_[t]);
                 fflush(stdout);
             }
-#if 0  // Disabled GF_ACTION to reduce noise; keep GF_SP for set-piece buttons
-            bool logThis = (actionLogThrottle_++ % 200) == 0;
-            if (logThis) {
-                printf("[gamestates] GF_ACTION t=%d ctrl_slot=%d active_p=%d dir=(%.3f,%.3f) buttons=0x%04X ",
-                       t, player, activeP, engineX, engineY, effectiveButtons);
-            }
-
             // Set direction as continuous float (desktop-style analog input).
             // When in deadzone, set (0,0) — HumanController::_GetHidInput()
             // will use the player's current direction at idle velocity.
             gameEnv_->set_direction(left_team, player, engineX, engineY);
-            if (logThis) {
-                if (std::abs(engineX) < 0.05f && std::abs(engineY) < 0.05f)
-                    printf("dir=idle ");
-                else
-                    printf("dir=(%.3f,%.3f) ", engineX, engineY);
-            }
 
             // --- BUTTONS: dual-function mapping matching desktop defaultKeyIDs ---
             // Desktop keyboard maps the SAME key to both offensive and defensive
@@ -1436,9 +1427,11 @@ void Server::applyPendingInputs() {
 
             // BUTTON_PASS → ShortPass (offense) + Pressure (defense)
             if (effectiveButtons & dzfoot::BUTTON_PASS) {
+                printf("[gamestates] GF_PASS t=%d player=%d eff.btns=0x%04X -> ShortPass=1 Pressure=1\n",
+                       t, player, effectiveButtons);
+                fflush(stdout);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_ShortPass, true);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Pressure, true);
-                if (logThis) printf("btn=PASS ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_ShortPass, false);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Pressure, false);
@@ -1447,7 +1440,6 @@ void Server::applyPendingInputs() {
             // BUTTON_HIGH_PASS → HighPass (offense only; Sliding has its own button)
             if (effectiveButtons & dzfoot::BUTTON_HIGH_PASS) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_HighPass, true);
-                if (logThis) printf("btn=HIGH ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_HighPass, false);
             }
@@ -1456,7 +1448,6 @@ void Server::applyPendingInputs() {
             if (effectiveButtons & dzfoot::BUTTON_SHOT) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Shot, true);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_TeamPressure, true);
-                if (logThis) printf("btn=SHOT ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Shot, false);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_TeamPressure, false);
@@ -1465,7 +1456,6 @@ void Server::applyPendingInputs() {
             // BUTTON_SLIDING → Sliding (defense only; separate from HighPass)
             if (effectiveButtons & dzfoot::BUTTON_SLIDING) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Sliding, true);
-                if (logThis) printf("btn=SLIDE ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Sliding, false);
             }
@@ -1473,7 +1463,6 @@ void Server::applyPendingInputs() {
             // BUTTON_DRIBBLE → Dribble
             if (effectiveButtons & dzfoot::BUTTON_DRIBBLE) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Dribble, true);
-                if (logThis) printf("btn=DRIB ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Dribble, false);
             }
@@ -1481,7 +1470,6 @@ void Server::applyPendingInputs() {
             // BUTTON_SPRINT → Sprint
             if (effectiveButtons & dzfoot::BUTTON_SPRINT) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Sprint, true);
-                if (logThis) printf("btn=SPRINT ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Sprint, false);
             }
@@ -1489,7 +1477,6 @@ void Server::applyPendingInputs() {
             // BUTTON_SWITCH_PLAYER → Switch
             if (effectiveButtons & dzfoot::BUTTON_SWITCH_PLAYER) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Switch, true);
-                if (logThis) printf("btn=SWITCH ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_Switch, false);
             }
@@ -1498,14 +1485,11 @@ void Server::applyPendingInputs() {
             if (effectiveButtons & dzfoot::BUTTON_KICK) {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_LongPass, true);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_KeeperRush, true);
-                if (logThis) printf("btn=KICK ");
             } else {
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_LongPass, false);
                 gameEnv_->set_button(left_team, player, e_ButtonFunction_KeeperRush, false);
             }
 
-            if (logThis) { printf("\n"); fflush(stdout); }
-#endif
     }
 }
 

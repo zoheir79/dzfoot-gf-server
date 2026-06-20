@@ -185,6 +185,13 @@ e_PlayerColor Team::GetPlayerColor(int playerID) {
   return e_PlayerColor_Default;
 }
 
+int Team::GetHumanGamerIndexForPlayer(int playerID) const {
+  for (unsigned int h = 0; h < humanGamers.size(); h++) {
+    if (humanGamers.at(h)->GetSelectedPlayerID() == playerID) return h;
+  }
+  return -1;
+}
+
 bool Team::IsHumanControlled(int playerID) {
   for (unsigned int h = 0; h < humanGamers.size(); h++) {
     if (humanGamers.at(h)->GetSelectedPlayerID() == playerID) return true;
@@ -431,6 +438,45 @@ void Team::Process() {
       }
     }
 
+    // Auto-switch human selection to the player who currently has unique possession.
+    // Placed here (after designatedTeamPossessionPlayer is updated) so the switch happens
+    // in the same tick a player recovers the ball, instead of one tick later.
+    if (match->IsInPlay() && humanGamers.size() > 0) {
+      // During set pieces, protect the human-controlled piece taker.
+      bool pieceTakerIsHuman = false;
+      Player* pieceTaker = 0;
+      if (match->IsInSetPiece()) {
+        pieceTaker = GetController()->GetPieceTaker();
+        pieceTakerIsHuman = pieceTaker && IsHumanControlled(pieceTaker->GetID());
+      }
+      if (!pieceTakerIsHuman) {
+        // Prefer the ball retainer for immediate response when a player recovers the ball.
+        Player* target = 0;
+        const char* targetSource = "";
+        Player* retainer = match->GetBallRetainer();
+        if (retainer && retainer->GetTeamID() == GetID() &&
+            !IsHumanControlled(retainer->GetID()) &&
+            retainer->HasUniquePossession() &&
+            retainer != GetGoalie()) {
+          target = retainer;
+          targetSource = "ball_retainer";
+          // Keep AI-designated possession in sync with the actual ball owner.
+          designatedTeamPossessionPlayer = retainer;
+        } else if (!IsHumanControlled(designatedTeamPossessionPlayer->GetID()) &&
+                   (designatedTeamPossessionPlayer->HasUniquePossession() || match->IsInSetPiece()) &&
+                   designatedTeamPossessionPlayer != GetGoalie()) {
+          target = designatedTeamPossessionPlayer;
+          targetSource = "designated_possession";
+        }
+        if (target) {
+          SelectPlayer(target);
+          printf("[autoswitch_track] Team::Process auto-switch EXECUTED team=%d t=%lu target=%d source=%s\n",
+                 GetID(), match->GetActualTime_ms(), target->GetID(), targetSource);
+          fflush(stdout);
+        }
+      }
+    }
+
     //printf("team id: %i, time: %i, other team id: %i, time: %i\n", GetID(), GetTimeNeededToGetToBall_ms(), match->GetTeam(abs(GetID() - 1))->GetID(), match->GetTeam(abs(GetID() - 1))->GetTimeNeededToGetToBall_ms());
 
   /*
@@ -532,41 +578,9 @@ void Team::UpdateSwitch() {
   //if (GetID() == 0) printf("teamposs %f\n", GetTeamPossessionAmount());
 
 
-  // team player in possession is not human selected
-
-  if (match->IsInPlay() && humanGamers.size() > 0) {
-    if (!IsHumanControlled(designatedTeamPossessionPlayer->GetID()) && (designatedTeamPossessionPlayer->HasUniquePossession() || match->IsInSetPiece())) {
-      // During set pieces, don't override the piece taker's human control.
-      // assignPieceTakerToHuman() already selected the piece taker before step();
-      // switching to designatedTeamPossessionPlayer here makes the piece taker
-      // AI-controlled, preventing the human from triggering the set piece.
-      bool pieceTakerIsHuman = false;
-      Player* pieceTaker = 0;
-      if (match->IsInSetPiece()) {
-        pieceTaker = GetController()->GetPieceTaker();
-        pieceTakerIsHuman = pieceTaker && IsHumanControlled(pieceTaker->GetID());
-      }
-      if (match->IsInSetPiece()) {
-        printf("[setpiece_track] Team::Process auto-switch check team=%d t=%lu inSetPiece=%d designatedHuman=%d hasUniquePossession=%d pieceTaker=%p takerID=%d takerIsHuman=%d pieceTakerIsHuman=%d\n",
-               GetID(), match->GetActualTime_ms(), (int)match->IsInSetPiece(),
-               (int)IsHumanControlled(designatedTeamPossessionPlayer->GetID()),
-               (int)designatedTeamPossessionPlayer->HasUniquePossession(),
-               (void*)pieceTaker, pieceTaker ? pieceTaker->GetID() : -1,
-               pieceTaker ? (int)IsHumanControlled(pieceTaker->GetID()) : -1,
-               (int)pieceTakerIsHuman);
-        fflush(stdout);
-      }
-      if (!pieceTakerIsHuman && designatedTeamPossessionPlayer != GetGoalie()) {
-        SelectPlayer(designatedTeamPossessionPlayer);
-        if (match->IsInSetPiece()) {
-          printf("[setpiece_track] Team::Process auto-switch EXECUTED team=%d t=%lu selected designatedTeamPossessionPlayer=%d\n",
-                 GetID(), match->GetActualTime_ms(), designatedTeamPossessionPlayer->GetID());
-          fflush(stdout);
-        }
-      }
-    }
-  }
-
+  // Auto-switch logic moved to Team::Process() so it runs immediately after
+  // designatedTeamPossessionPlayer is updated (e.g. when a player recovers the ball).
+  // The switchPriority rotation above is still handled here.
 }
 
 Player *Team::GetGoalie() {
