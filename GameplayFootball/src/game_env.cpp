@@ -24,7 +24,7 @@ GameEnv::~GameEnv() {
 
 void GameEnv::start_game() {
   dzfootEnv_ = new DZFootEnv();
-  dzfootEnv_->Initialize(1280, 720);
+  dzfootEnv_->Initialize(1, 1);  // headless: minimal resolution, no rendering
 
   // Start match with default team DB IDs (1 vs 2)
   // Only register human gamers for the configured agent counts.
@@ -44,6 +44,10 @@ void GameEnv::start_game() {
 void GameEnv::step() {
   if (!dzfootEnv_ || !gameStarted_) return;
   dzfootEnv_->Step();
+  // Re-assign piece taker after the simulation step so Team::Process() doesn't
+  // leave the human gamer controlling the wrong player during a set piece.
+  assignPieceTakerToHuman(0);
+  assignPieceTakerToHuman(1);
   stepCount_++;
 }
 
@@ -255,12 +259,8 @@ void GameEnv::assignPieceTakerToHuman(int team) {
   Team* t = match->GetTeam(team);
   if (!t) return;
   Player* pieceTaker = t->GetController()->GetPieceTaker();
-  printf("[setpiece_track] GameEnv::assignPieceTakerToHuman team=%d t=%lu inSetPiece=1 pieceTaker=%p takerID=%d isHuman=%d\n",
-         team, match->GetActualTime_ms(), (void*)pieceTaker,
-         pieceTaker ? pieceTaker->GetID() : -1,
-         pieceTaker ? (int)t->IsHumanControlled(pieceTaker->GetID()) : -1);
-  fflush(stdout);
-  if (pieceTaker && !t->IsHumanControlled(pieceTaker->GetID())) {
+  bool wasHuman = pieceTaker && t->IsHumanControlled(pieceTaker->GetID());
+  if (pieceTaker && !wasHuman) {
     t->SelectPlayer(pieceTaker);
     printf("[setpiece_track] GameEnv::assignPieceTakerToHuman SELECTED team=%d t=%lu takerID=%d\n",
            team, match->GetActualTime_ms(), pieceTaker->GetID());
@@ -277,9 +277,12 @@ int GameEnv::get_piece_taker_hid_slot(int team) const {
   Player* pieceTaker = t->GetController()->GetPieceTaker();
   if (!pieceTaker) return 0;
   int idx = t->GetHumanGamerIndexForPlayer(pieceTaker->GetID());
-  printf("[setpiece_track] GameEnv::get_piece_taker_hid_slot team=%d takerID=%d idx=%d humanCount=%u\n",
-         team, pieceTaker->GetID(), idx, t->GetHumanGamerCount());
-  fflush(stdout);
+  static int hidSlotLogCounter = 0;
+  if ((hidSlotLogCounter++ % 120) == 0) {
+    printf("[setpiece_track] GameEnv::get_piece_taker_hid_slot team=%d takerID=%d idx=%d humanCount=%u\n",
+           team, pieceTaker->GetID(), idx, t->GetHumanGamerCount());
+    fflush(stdout);
+  }
   return idx >= 0 ? idx : 0;
 }
 

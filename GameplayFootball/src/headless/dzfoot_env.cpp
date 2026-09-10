@@ -132,16 +132,32 @@ void DZFootEnv::DoInitialize(Properties *config) {
   randomseed();
   fastrandomseed();
 
-  // Database (needed for team/player data)
-  db = new Database();
-  std::string dbPath = "databases/default/database.sqlite";
-  const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
-  if (dataDir) {
-    dbPath = std::string(dataDir) + "/" + dbPath;
-  }
-  bool dbSuccess = db->Load(dbPath);
-  if (!dbSuccess) {
-    Log(e_FatalError, "dzfoot", "DoInitialize", "Could not open database: " + dbPath);
+  // DZFoot optimization: share Database across all match instances.
+  // The database is read-only in headless mode (no menu/league operations
+  // modify it). Loading it once saves ~50MB RAM and ~2s startup per match.
+  //
+  // TODO(FUTURE): Currently each match runs in its own OS process (gf-worker.sh
+  // spawns one gf_server per match), so this static singleton provides no gain.
+  // To activate this optimization, implement a multi-match-per-process mode
+  // where a single gf_server manages N matches via N DZFootEnv instances.
+  // The shared Database will then be loaded once and reused across all matches.
+  static Database* sharedDb = nullptr;
+  static std::string sharedDbPath;
+  if (sharedDb) {
+    db = sharedDb;
+  } else {
+    db = new Database();
+    std::string dbPath = "databases/default/database.sqlite";
+    const char* dataDir = std::getenv("GFOOTBALL_DATA_DIR");
+    if (dataDir) {
+      dbPath = std::string(dataDir) + "/" + dbPath;
+    }
+    bool dbSuccess = db->Load(dbPath);
+    if (!dbSuccess) {
+      Log(e_FatalError, "dzfoot", "DoInitialize", "Could not open database: " + dbPath);
+    }
+    sharedDb = db;
+    sharedDbPath = dbPath;
   }
 }
 
@@ -199,13 +215,12 @@ void DZFootEnv::Step() {
   gameTask->ProcessPhase();   // physics / match->Process()
 
   // === GraphicsSequence (continues sequentially in headless) ===
-  gameTask->PutPhase();       // match->Put() + fullbody model update + upload geometry
+  gameTask->PutPhase();       // match->Put() + scene graph sync
 
-  // GraphicsTask — executed sequentially (no separate thread in headless)
-  ISystemTask* gfxTask = graphicsSystem->GetTask();
-  gfxTask->GetPhase();        // collect visibles, poke cameras
-  gfxTask->ProcessPhase();    // shadow maps, render camera, overlay2D
-  gfxTask->PutPhase();        // SwapBuffers → MockRenderer3D no-op
+  // DZFoot headless optimization: skip GraphicsTask phases entirely.
+  // All three phases (Get/Process/Put) already early-return when
+  // MockRenderer3D is detected via dynamic_cast. Skipping the calls
+  // avoids 3 dynamic_casts per tick with zero behavior change.
 
   step_++;
 
@@ -356,7 +371,8 @@ void DZFootEnv::Shutdown() {
 
   // NOTE: do NOT delete graphicsSystem here — SystemManager::Exit()
   // already iterates registered systems, calls Exit() and deletes them.
-  delete db;
+  // DZFoot optimization: do NOT delete db — it's a shared singleton
+  // (see DoInitialize). It will be cleaned up when the process exits.
   db = nullptr;
 
   Exit();  // blunted engine shutdown (deletes graphicsSystem via SystemManager)

@@ -145,10 +145,6 @@ void GameTask::ProcessPhase() {
 
 void GameTask::PutPhase() {
 
-  std::vector < boost::intrusive_ptr<UpdateFullbodyModel> > updateFullbodyModels;
-  std::vector < boost::intrusive_ptr<UploadFullbodyModel> > uploadFullbodyModels;
-  std::vector<PlayerBase*> playersToProcess;
-
   matchLifetimeMutex.lock();
 
   if (match) {
@@ -158,66 +154,13 @@ void GameTask::PutPhase() {
 
     match->Put();
 
-    std::vector<Player*> players;
-    match->GetActiveTeamPlayers(0, players);
-    match->GetActiveTeamPlayers(1, players);
-    std::vector<PlayerBase*> officials;
-    match->GetOfficialPlayers(officials);
-
-    for (unsigned int i = 0; i < players.size(); i++) {
-      if (match->GetPause() || players.at(i)->NeedsModelUpdate()) playersToProcess.push_back(players.at(i));
-    }
-    for (unsigned int i = 0; i < officials.size(); i++) {
-      playersToProcess.push_back(officials.at(i));
-    }
-
-    //printf("%i players, %i threads.\n", playersToProcess.size(), threadCount);
-    unsigned int playersPerThread = 7;
-    unsigned int playerStartIndex = 0;
-    while (playerStartIndex < playersToProcess.size()) {
-      std::vector<PlayerBase*> playersToProcessInThread;
-      for (unsigned int p = 0; p < playersPerThread; p++) {
-        if (playerStartIndex + p >= playersToProcess.size()) break;
-        playersToProcessInThread.push_back(playersToProcess.at(playerStartIndex + p));
-        //printf("adding player %i\n", playerStartIndex + p);
-        // unthreaded version: playersToProcess.at(playerStartIndex + p)->UpdateFullbodyModel();
-      }
-      playerStartIndex += playersPerThread;
-
-      boost::intrusive_ptr<UpdateFullbodyModel> updateFullbodyModel(new UpdateFullbodyModel(playersToProcessInThread));
-      updateFullbodyModels.push_back(updateFullbodyModel);
-      TaskManager::GetInstance().EnqueueWork(updateFullbodyModel, true);
-    }
-
-    match->UploadGoalNetting(); // won't this block the whole process thing too? (opengl busy == wait, while mutex locked == no process)
-
+    // DZFoot headless optimization: skip vertex skinning (UpdateFullbodyModel),
+    // geometry upload (UploadFullbodyModel), and goal netting upload.
+    // These are render-only operations — Process() never reads joints[],
+    // fullbodyOffset, or vertex buffers. match->Put() already updates the
+    // scene graph nodes, animations, and temporal smoothers, which is all
+    // the physics/AI logic depends on.
   }
-
-
-  for (unsigned int t = 0; t < updateFullbodyModels.size(); t++) {
-    updateFullbodyModels.at(t)->Wait();
-  }
-
-  if (match) {
-
-    unsigned int playersPerThread = 7;
-    unsigned int playerStartIndex = 0;
-    while (playerStartIndex < playersToProcess.size()) {
-      std::vector < boost::intrusive_ptr<Geometry> > geometryToUploadInThread;
-      for (unsigned int p = 0; p < playersPerThread; p++) {
-        if (playerStartIndex + p >= playersToProcess.size()) break;
-        geometryToUploadInThread.push_back(boost::static_pointer_cast<Geometry>(playersToProcess.at(playerStartIndex + p)->GetFullbodyNode()->GetObject("fullbody")));
-      }
-      playerStartIndex += playersPerThread;
-
-      boost::intrusive_ptr<UploadFullbodyModel> uploadFullbodyModel(new UploadFullbodyModel(geometryToUploadInThread));
-      uploadFullbodyModels.push_back(uploadFullbodyModel);
-      TaskManager::GetInstance().EnqueueWork(uploadFullbodyModel, true);
-
-      //working on: maybe we need to use the gfx system get pointer somewhere here? too tired to analyse this now :p
-    }
-
-  } // !match
 
   matchLifetimeMutex.unlock();
 

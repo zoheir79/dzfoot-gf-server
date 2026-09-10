@@ -454,22 +454,36 @@ void Team::Process() {
         Player* target = 0;
         const char* targetSource = "";
         Player* retainer = match->GetBallRetainer();
+        Player* currentSelected = humanGamers.empty() ? 0 : humanGamers.at(0)->GetSelectedPlayer();
         if (retainer && retainer->GetTeamID() == GetID() &&
-            !IsHumanControlled(retainer->GetID()) &&
+            retainer != currentSelected &&
             retainer->HasUniquePossession() &&
             retainer != GetGoalie()) {
           target = retainer;
           targetSource = "ball_retainer";
           // Keep AI-designated possession in sync with the actual ball owner.
           designatedTeamPossessionPlayer = retainer;
-        } else if (!IsHumanControlled(designatedTeamPossessionPlayer->GetID()) &&
+        } else if (designatedTeamPossessionPlayer != currentSelected &&
                    (designatedTeamPossessionPlayer->HasUniquePossession() || match->IsInSetPiece()) &&
                    designatedTeamPossessionPlayer != GetGoalie()) {
           target = designatedTeamPossessionPlayer;
           targetSource = "designated_possession";
         }
         if (target) {
-          SelectPlayer(target);
+          // DZFoot: one human gamer per team; always switch the human gamer to the
+          // most relevant player (ball retainer / designated possession). The
+          // original SelectPlayer() refused to switch if the target was already
+          // marked human-controlled, which caused the same player to stay active
+          // for the entire match on mobile.
+          if (!humanGamers.empty()) {
+            humanGamers.at(0)->SetSelectedPlayerID(target->GetID());
+            // Rotate switch priority so the next manual switch starts from the active player
+            if (!switchPriority.empty()) {
+              switchPriority.push_back(*switchPriority.begin());
+              switchPriority.pop_front();
+            }
+            designatedTeamPossessionPlayer = target;
+          }
           printf("[autoswitch_track] Team::Process auto-switch EXECUTED team=%d t=%lu target=%d source=%s\n",
                  GetID(), match->GetActualTime_ms(), target->GetID(), targetSource);
           fflush(stdout);

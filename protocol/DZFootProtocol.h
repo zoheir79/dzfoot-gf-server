@@ -83,15 +83,18 @@ struct NetworkBallState {
 static_assert(sizeof(NetworkBallState) == 40, "NetworkBallState size mismatch");
 
 struct NetworkPlayerState {
-    float  pos[3];
-    float  vel[3];
-    float  dir[3];
-    float  rotY;
-    uint8_t anim;
-    uint8_t team;
-    uint8_t role;
-    uint8_t flags;
-    float  tiredFactor;
+    float  pos[3];         // 12
+    float  vel[2];          // 8  (X+Y only; Z repurposed for anim detail)
+    float  dir[3];         // 12
+    float  rotY;            // 4
+    uint8_t anim;           // 1  (AnimId enum)
+    uint8_t team;           // 1
+    uint8_t role;           // 1
+    uint8_t flags;          // 1
+    float  tiredFactor;     // 4
+    uint8_t functionType;   // 1  (GF e_FunctionType: 0-14)
+    uint8_t enumVelocity;   // 1  (GF e_Velocity: 0=Idle,1=Dribble,2=Walk,3=Sprint)
+    uint16_t animProgress;  // 2  (0-65535 = 0.0-1.0 through current anim)
 };
 static_assert(sizeof(NetworkPlayerState) == 48, "NetworkPlayerState size mismatch");
 

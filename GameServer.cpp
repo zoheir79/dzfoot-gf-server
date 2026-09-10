@@ -621,12 +621,22 @@ void Server::updateState() {
                 if (previousState_.tick == 0) {
                     ps.vel[0] = 0.0f;
                     ps.vel[1] = 0.0f;
-                    ps.vel[2] = 0.0f;
                 } else {
                     NetworkPlayerState& prev = previousState_.players[idx];
                     ps.vel[0] = ps.pos[0] - prev.pos[0];
                     ps.vel[1] = ps.pos[1] - prev.pos[1];
-                    ps.vel[2] = ps.pos[2] - prev.pos[2];
+                }
+
+                // Fill extended animation fields from GF internal state
+                ps.functionType = static_cast<uint8_t>(p->GetCurrentFunctionType());
+                ps.enumVelocity = static_cast<uint8_t>(p->GetEnumVelocity());
+                {
+                    int frameNum = p->GetFrameNum();
+                    int frameCount = p->GetFrameCount();
+                    float progress = (frameCount > 0) ? static_cast<float>(frameNum) / static_cast<float>(frameCount) : 0.0f;
+                    if (progress < 0.0f) progress = 0.0f;
+                    if (progress > 1.0f) progress = 1.0f;
+                    ps.animProgress = static_cast<uint16_t>(progress * 65535.0f);
                 }
 
                 // Deduce animation using internal GF state when available
@@ -1517,7 +1527,7 @@ void Server::accumulateStats() {
     for (int idx = 0; idx < kMaxPlayers; ++idx) {
         const auto& ps = currentState_.players[idx];
         float vx = ps.vel[0] * kPitchLenM;
-        float vz = ps.vel[2] * kPitchWidM;
+        float vz = ps.vel[1] * kPitchWidM;
         float dist = std::sqrt(vx * vx + vz * vz);
         stats_.distance_m[ps.team] += dist;
     }
