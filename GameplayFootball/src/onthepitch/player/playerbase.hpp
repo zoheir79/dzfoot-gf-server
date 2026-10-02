@@ -36,6 +36,9 @@ class PlayerBase {
 
     inline int GetFrameNum() { return humanoid->GetFrameNum(); }
     inline int GetFrameCount() { return humanoid->GetFrameCount(); }
+    // Index of the currently playing clip inside the Match AnimCollection.
+    // This is the exact clip selected by the desktop SelectAnim() pipeline.
+    inline int GetAnimCollectionId() { return humanoid->GetCurrentAnim()->id; }
 
     inline Vector3 GetPosition() const { return humanoid->GetPosition(); }
     inline Vector3 GetGeomPosition() const { return humanoid->GetGeomPosition(); }

@@ -11,6 +11,10 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <algorithm>
+#include <fstream>
+#include <cstdio>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "game_env.hpp"
 #include "gfootball_actions.h"
@@ -362,6 +366,45 @@ void Server::run() {
 
     sendMatchSetup();
 
+    // Optional one-shot export of the full AnimCollection for the Android
+    // animation library. GF_EXPORT_ANIMS=<dir> dumps every clip (including
+    // runtime-generated and mirrored variants) in collection order, plus a
+    // registry file mapping clipId -> name/frameCount/animType. The Android
+    // GLB builder (godot/tools/build_anim_library.py) consumes this export.
+    if (const char* exportDir = std::getenv("GF_EXPORT_ANIMS")) {
+        if (gameEnv_ && gameEnv_->context && gameEnv_->context->gameTask) {
+            Match* match = gameEnv_->context->gameTask->GetMatch();
+            if (match && match->GetAnims()) {
+                const std::vector<Animation*>& anims = match->GetAnims()->GetAnimations();
+                std::string dir(exportDir);
+                std::cout << "[gamestates] GF_ANIM_EXPORT dir=" << dir << " count=" << anims.size() << std::endl;
+#ifdef _WIN32
+                _mkdir(dir.c_str());
+#else
+                mkdir(dir.c_str(), 0755);
+#endif
+                std::ofstream registry(std::string(dir) + "/anim_registry.txt");
+                for (size_t i = 0; i < anims.size(); ++i) {
+                    Animation* a = anims[i];
+                    if (!a) continue;
+                    char fname[64];
+                    std::snprintf(fname, sizeof(fname), "c%05zu.anim", i);
+                    a->Save(std::string(dir) + "/" + fname);
+                    registry << i << "\t" << a->GetName() << "\t"
+                             << a->GetFrameCount() << "\t" << a->GetAnimType() << "\n";
+                }
+                registry.close();
+                std::cout << "[gamestates] GF_ANIM_EXPORT done: " << anims.size() << " clips" << std::endl;
+                if (const char* exitFlag = std::getenv("GF_EXPORT_ANIMS_EXIT")) {
+                    if (std::string(exitFlag) == "1") {
+                        std::cout << "[gamestates] GF_ANIM_EXPORT exit requested, stopping server" << std::endl;
+                        stop();
+                    }
+                }
+            }
+        }
+    }
+
     if (cfg_.redis && cfg_.redis->isConfigured()) {
         cfg_.redis->publish("gf.ready", cfg_.roomId);
     }
@@ -478,7 +521,18 @@ void Server::run() {
             broadcastTacticalState();
         }
 
-        // 4. 1 Hz heartbeat (every 100 ticks)
+        // 4. Republish match setup every 5s during the first 2 minutes.
+        // gf.setup is a one-shot Redis pubsub publish at startup — if the
+        // session-service relay bot hasn't joined the LiveKit room yet, the
+        // packet is silently dropped (RELAY_SKIP no_publisher) and Android
+        // falls back to default kits/names. Rebuild + resend is cheap.
+        if (tickCounter_ > 0 &&
+            tickCounter_ < static_cast<uint32_t>(simTicksPerSec * 120) &&
+            tickCounter_ % (simTicksPerSec * 5) == 0) {
+            sendMatchSetup();
+        }
+
+        // 5. 1 Hz heartbeat (every 100 ticks)
         if (tickCounter_ % simTicksPerSec == 0 && cfg_.redis && cfg_.redis->isConfigured()) {
             auto now = std::chrono::system_clock::now().time_since_epoch();
             auto sec = std::chrono::duration_cast<std::chrono::seconds>(now).count();
@@ -582,17 +636,12 @@ void Server::updateState() {
                 // We read the stable world environment coordinates directly from the engine's GetTeamState
                 // exported in `info`. This is 100% stable, handles goalkeeper and set-piece resets perfectly,
                 // and completely avoids any C++ raw memory mirroring/unmirroring glitches.
-                const std::vector<PlayerInfo>& teamInfos = (teamId == 0) ? info.left_team : info.right_team;
-                if (i < teamInfos.size()) {
-                    const PlayerInfo& pi = teamInfos[i];
-                    ps.pos[0] = pi.player_position.env_coord(0);
-                    ps.pos[1] = pi.player_position.env_coord(1);
-                    ps.pos[2] = pi.player_position.env_coord(2);
-                } else {
-                    ps.pos[0] = pos.coords[0] / X_FIELD_SCALE;
-                    ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE;
-                    ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
-                }
+                // NOTE: info.left_team/right_team only contain ACTIVE players, so indexing them
+                // with the GetAllPlayers() index shifts positions after a red card. Use the
+                // player's own position (identical value, same scaling as PlayerInfo).
+                ps.pos[0] = pos.coords[0] / X_FIELD_SCALE;
+                ps.pos[1] = pos.coords[1] / Y_FIELD_SCALE;
+                ps.pos[2] = pos.coords[2] / Z_FIELD_SCALE;
 
                 ps.team = static_cast<uint8_t>(teamId);
                 ps.role = static_cast<uint8_t>(p->GetFormationEntry().role);
@@ -629,7 +678,6 @@ void Server::updateState() {
 
                 // Fill extended animation fields from GF internal state
                 ps.functionType = static_cast<uint8_t>(p->GetCurrentFunctionType());
-                ps.enumVelocity = static_cast<uint8_t>(p->GetEnumVelocity());
                 {
                     int frameNum = p->GetFrameNum();
                     int frameCount = p->GetFrameCount();
@@ -639,12 +687,22 @@ void Server::updateState() {
                     ps.animProgress = static_cast<uint16_t>(progress * 65535.0f);
                 }
 
-                // Deduce animation using internal GF state when available
-                ps.anim = deduceAnimId(static_cast<int>(i), teamId);
+                // Send the EXACT clip selected by the desktop SelectAnim() pipeline.
+                // clipId = index into the Match AnimCollection (autogen + mirrors included).
+                // Encoded as 16-bit LE: anim = low byte, enumVelocity = high byte.
+                // Values >= 0xFF00 are reserved for legacy 17-category fallback
+                // (anim = AnimId 0-16, enumVelocity = 0xFF).
+                {
+                    int clipId = p->GetAnimCollectionId();
+                    if (clipId < 0 || clipId >= 0xFF00) clipId = 0;
+                    ps.anim = static_cast<uint8_t>(clipId & 0xFF);
+                    ps.enumVelocity = static_cast<uint8_t>((clipId >> 8) & 0xFF);
+                }
                 // Override with celebration if goal was just scored by this player
                 int globalIdx = baseIdx + static_cast<int>(i);
                 if (globalIdx < kMaxPlayers && tickCounter_ < celebrationExpiryTick_[globalIdx]) {
                     ps.anim = ANIM_CELEBRATE;
+                    ps.enumVelocity = 0xFF; // legacy category fallback marker
                 }
             }
         };
