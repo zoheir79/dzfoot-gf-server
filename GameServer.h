@@ -165,6 +165,9 @@ private:
     int lastScoreB_ = 0;
     bool matchSetupSent_ = false;
     bool halfTimeSent_ = false;
+    // First tick where the internal match clock advanced (kickoff done).
+    // -1 = still pre-match (client may still be loading the scene).
+    int64_t matchStartTick_ = -1;
     uint8_t lastGameMode_ = 255;
     std::string stadiumId_;  // from match config JSON
 

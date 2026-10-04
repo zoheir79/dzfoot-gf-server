@@ -86,11 +86,10 @@ void Referee::Process() {
 
     // some phase is over :[
 
-    if (((match->GetMatchPhase() == e_MatchPhase_1stHalf && match->GetMatchTime_ms() > 2700000) ||
-         (match->GetMatchPhase() == e_MatchPhase_2ndHalf && match->GetMatchTime_ms() > 5400000) ||
-         (match->GetMatchPhase() == e_MatchPhase_1stExtraTime && match->GetMatchTime_ms() > 6300000) ||
-         (match->GetMatchPhase() == e_MatchPhase_2ndExtraTime && match->GetMatchTime_ms() > 7200000)) &&
-        ballPos.coords[0] < 10 && ballPos.coords[0] > -10) {
+    if ((match->GetMatchPhase() == e_MatchPhase_1stHalf && match->GetMatchTime_ms() > 2700000) ||
+        (match->GetMatchPhase() == e_MatchPhase_2ndHalf && match->GetMatchTime_ms() > 5400000) ||
+        (match->GetMatchPhase() == e_MatchPhase_1stExtraTime && match->GetMatchTime_ms() > 6300000) ||
+        (match->GetMatchPhase() == e_MatchPhase_2ndExtraTime && match->GetMatchTime_ms() > 7200000)) {
 
       foul.advantage = false;
       if (!CheckFoul()) {
@@ -268,7 +267,16 @@ void Referee::Process() {
            match->GetActualTime_ms(), (int)takerValid, (int)touchAnim, (int)touchPending,
            currentFrame, touchFrame, (int)(touchAnim && !touchPending));
     fflush(stdout);
-    if (touchAnim && !touchPending) {
+    // Safety net: never let a set piece stall the match forever (null taker,
+    // lost input routing, AFK human). 20s after the whistle is way past a
+    // normal take (~1-3s), so timing out here means something went wrong.
+    bool timedOut = match->GetActualTime_ms() > buffer.startTime + 20000;
+    if (timedOut) {
+      printf("[setpiece_track] Referee SETPIECE_TIMEOUT t=%lu startTime=%lu takerValid=%d - force ending set piece\n",
+             match->GetActualTime_ms(), buffer.startTime, (int)takerValid);
+      fflush(stdout);
+    }
+    if ((touchAnim && !touchPending) || timedOut) {
       buffer.active = false;
       printf("[setpiece_track] Referee STOP_SET_PIECE t=%lu condition met (TouchAnim=1 && !TouchPending), calling match->StopSetPiece()\n", match->GetActualTime_ms());
       fflush(stdout);

@@ -569,6 +569,18 @@ void Server::updateState() {
         // won't count up while players are frozen in a set piece.
         currentState_.timer = static_cast<float>(info.match_time_ms) / 1000.0f;
 
+        // Play clock: wall-clock seconds since the ball first entered play.
+        // match_time_ms runs faster than real time (matchDurationFactor), so
+        // it can't gate match duration — a "300s" match would die ~75s after
+        // kickoff. Also, pre-kickoff waiting (client scene loading, set piece
+        // setup) must not eat into the match budget.
+        if (matchStartTick_ < 0 && info.match_time_ms > 0) {
+            matchStartTick_ = static_cast<int64_t>(tickCounter_);
+        }
+        const float playElapsedS = (matchStartTick_ >= 0)
+            ? static_cast<float>(tickCounter_ - matchStartTick_) / static_cast<float>(dzfoot::kSimFrequencyHz)
+            : 0.0f;
+
         // --- Ball state ---
         currentState_.ball.pos[0] = info.ball_position.env_coord(0);
         currentState_.ball.pos[1] = info.ball_position.env_coord(1);
@@ -995,8 +1007,8 @@ void Server::updateState() {
             lastGameMode_ = static_cast<uint8_t>(info.game_mode);
         }
 
-        // Half time (once, when the timer crosses duration / 2)
-        if (!halfTimeSent_ && currentState_.timer >= cfg_.duration * 0.5f) {
+        // Half time (once, when the play clock crosses duration / 2)
+        if (!halfTimeSent_ && playElapsedS >= cfg_.duration * 0.5f) {
             MatchEvent ev{};
             ev.eventType = EVENT_HALF_TIME;
             ev.team = 0;
@@ -1011,7 +1023,7 @@ void Server::updateState() {
         }
 
         // End of match
-        if (currentState_.timer >= cfg_.duration) {
+        if (matchStartTick_ >= 0 && playElapsedS >= cfg_.duration) {
             MatchEvent ev;
             ev.eventType = EVENT_END_MATCH;
             ev.team = 0;

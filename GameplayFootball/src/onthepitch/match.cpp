@@ -846,8 +846,15 @@ void Match::UpdateIngameCamera() {
     cameraFarCap = 220;
 
     if (goalScoredTimer == 6000) {
-      pause = true;
-      sig_OnExtendedReplayMoment(this);
+      // Only pause for the extended replay when a listener actually exists
+      // (desktop menu → GoExtendedReplayPage). In headless mode no replay UI
+      // subscribes, so pause would stick forever: everything under !pause in
+      // Process() is skipped, actualTime_ms freezes and the match stalls
+      // permanently right before the post-goal kickoff prepareTime.
+      if (!sig_OnExtendedReplayMoment.empty()) {
+        pause = true;
+        sig_OnExtendedReplayMoment(this);
+      }
     }
   }
 }
