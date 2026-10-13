@@ -148,6 +148,11 @@ private:
     std::atomic<bool> hasNewInput_{false};
     PlayerInputPacket newInput_{};
 
+    // Start gate: set by the first input packet from the client. The Android
+    // client only sends input once its scene is fully loaded AND displayed, so
+    // the simulation stays frozen at kickoff until then (see Server::run()).
+    std::atomic<bool> clientReady_{false};
+
     // Accumulate button presses via OR so rapid taps (<10ms) are not lost
     // when the client sends DOWN+UP between two server ticks.
     std::atomic<uint16_t> accumulatedButtons_[2] = {};

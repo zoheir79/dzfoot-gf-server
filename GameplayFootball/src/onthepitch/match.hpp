@@ -215,6 +215,7 @@ class Match {
     MatchData* GetMatchData() { return matchData; }
 
     float GetMatchDurationFactor() const { return matchDurationFactor; }
+    void SetMatchDurationFactor(float factor) { if (factor > 0.01f) matchDurationFactor = factor; }
     float GetMatchDifficulty() const { return matchDifficulty; }
 
     std::vector<Vector3> &GetAnimPositionCache(Animation *anim) { return animPositionCache.find(anim)->second; }

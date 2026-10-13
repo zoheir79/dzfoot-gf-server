@@ -250,6 +250,12 @@ void Referee::Process() {
         whistle[1]->Poke(e_SystemType_Audio);
         printf("[setpiece_track] Referee START_SET_PIECE t=%lu startTime reached, calling match->StartPlay() + match->StartSetPiece()\n", match->GetActualTime_ms());
         fflush(stdout);
+        if (buffer.desiredSetPiece == e_SetPiece_ThrowIn && buffer.taker && match->GetBallRetainer() != buffer.taker) {
+          printf("[setpiece_track] Referee THROWIN_RETAIN_LOST t=%lu retainer=%d takerID=%d - re-selecting retain anim\n",
+                 match->GetActualTime_ms(), match->GetBallRetainer() ? match->GetBallRetainer()->GetID() : -1, buffer.taker->GetID());
+          fflush(stdout);
+          buffer.taker->SelectRetainAnim();
+        }
         match->StartPlay();
         match->StartSetPiece();
       }

@@ -134,6 +134,14 @@ void ElizaController::RequestCommand(PlayerCommandQueue &commandQueue) {
 
   else if ((match->IsInSetPiece() && team->GetController()->GetPieceTaker() == player) || match->GetBallRetainer() == player) {
 
+    if (match->GetActualTime_ms() % 500 == 0) {
+      printf("[setpiece_track] Eliza taker branch team=%d player=%d t=%lu setPieceType=%d inSetPiece=%d retainer=%d touchAnim=%d touchPending=%d humanGamers=%u\n",
+             team->GetID(), player->GetID(), match->GetActualTime_ms(), (int)team->GetController()->GetSetPieceType(),
+             (int)match->IsInSetPiece(), match->GetBallRetainer() ? match->GetBallRetainer()->GetID() : -1,
+             (int)CastPlayer()->TouchAnim(), (int)CastPlayer()->TouchPending(), team->GetHumanGamerCount());
+      fflush(stdout);
+    }
+
     PlayerCommand actionCommand;
 
     if (team->GetController()->GetSetPieceType() == e_SetPiece_Penalty) {

@@ -305,6 +305,14 @@ void Server::run() {
     // Must happen after warm-up so Match/Team objects exist.
     gameEnv_->apply_formations();
 
+    if (gameEnv_->context && gameEnv_->context->gameTask) {
+        Match* clockMatch = gameEnv_->context->gameTask->GetMatch();
+        if (clockMatch) {
+            const int effDuration = hasCustomConfig ? mcfg.duration_seconds : cfg_.duration;
+            if (effDuration > 0) clockMatch->SetMatchDurationFactor(static_cast<float>(effDuration) / 5400.0f);
+        }
+    }
+
     // Inject custom player skills from match config into GF PlayerData
     if (hasCustomConfig) {
         if (!mcfg.left_team.players.empty() || !mcfg.right_team.players.empty()) {
@@ -461,6 +469,30 @@ void Server::run() {
     const int tacticalSkip = std::max(1, simTicksPerSec / 10);
     int stateTickAccumulator = 0;
 
+    // === Start gate ===
+    // The Android client needs minutes to load/compile its scene. Without a
+    // gate the sim (and its 20s set-piece timeout) plays the whole kickoff and
+    // the first minutes before the player ever sees the pitch. Freeze the
+    // simulation (state keeps broadcasting) until the first client input
+    // arrives — the client only sends input once loaded AND displayed — or
+    // until GF_WAIT_CLIENT_MAX_S elapses (worst case: start without client).
+    // Disabled for ai_vs_ai rooms (no human) and with GF_WAIT_CLIENT=0.
+    const char* waitEnv = std::getenv("GF_WAIT_CLIENT");
+    const bool gateEnabled = (sc.left_agents + sc.right_agents) > 0 &&
+                             !(waitEnv && std::string(waitEnv) == "0");
+    int gateMaxSec = 420;
+    if (const char* maxEnv = std::getenv("GF_WAIT_CLIENT_MAX_S")) {
+        int v = std::atoi(maxEnv);
+        if (v > 0) gateMaxSec = v;
+    }
+    const int gateWarmupTicks = 100;  // let the match initialise before freezing
+    bool gateOpen = !gateEnabled;
+    const auto gateStart = std::chrono::steady_clock::now();
+    int gateLogTicks = 0;
+    if (gateEnabled) {
+        std::cout << "[gamestates] START_GATE enabled max=" << gateMaxSec << "s" << std::endl;
+    }
+
     while (running_) {
         if (cfg_.shutdownFlag && !*(cfg_.shutdownFlag)) {
             running_ = false;
@@ -470,8 +502,23 @@ void Server::run() {
 
         // 1. Physics step at 100 Hz
         try {
-            applyPendingInputs();
-            gameEnv_->step();
+            if (!gateOpen && tickCounter_ >= static_cast<uint32_t>(gateWarmupTicks)) {
+                auto waited = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::steady_clock::now() - gateStart).count();
+                if (clientReady_.load(std::memory_order_acquire)) {
+                    gateOpen = true;
+                    std::cout << "[gamestates] START_GATE open: client ready after " << waited << "s" << std::endl;
+                } else if (waited >= gateMaxSec) {
+                    gateOpen = true;
+                    std::cout << "[gamestates] START_GATE open: TIMEOUT after " << waited << "s (no client input)" << std::endl;
+                } else if ((++gateLogTicks % 1000) == 1) {
+                    std::cout << "[gamestates] START_GATE waiting for client (" << waited << "s)" << std::endl;
+                }
+            }
+            if (gateOpen || tickCounter_ < static_cast<uint32_t>(gateWarmupTicks)) {
+                applyPendingInputs();
+                gameEnv_->step();
+            }
             ++tickCounter_;
         } catch (const std::exception& e) {
             std::cerr << "[gamestates] GF_CRASH: Exception in step(): " << e.what() << std::endl;
@@ -1008,7 +1055,9 @@ void Server::updateState() {
         }
 
         // Half time (once, when the play clock crosses duration / 2)
-        if (!halfTimeSent_ && playElapsedS >= cfg_.duration * 0.5f) {
+        Match* phaseMatch = gameEnv_->context->gameTask->GetMatch();
+        const int enginePhase = phaseMatch ? static_cast<int>(phaseMatch->GetMatchPhase()) : -1;
+        if (!halfTimeSent_ && (enginePhase >= static_cast<int>(e_MatchPhase_2ndHalf) || playElapsedS >= cfg_.duration * 0.75f)) {
             MatchEvent ev{};
             ev.eventType = EVENT_HALF_TIME;
             ev.team = 0;
@@ -1023,7 +1072,7 @@ void Server::updateState() {
         }
 
         // End of match
-        if (matchStartTick_ >= 0 && playElapsedS >= cfg_.duration) {
+        if (matchStartTick_ >= 0 && (enginePhase >= static_cast<int>(e_MatchPhase_1stExtraTime) || playElapsedS >= cfg_.duration * 1.6f)) {
             MatchEvent ev;
             ev.eventType = EVENT_END_MATCH;
             ev.team = 0;
@@ -1360,6 +1409,7 @@ void Server::receiveInput(const PlayerInputPacket& input) {
             fflush(stdout);
         }
     }
+    clientReady_.store(true, std::memory_order_release);
     // Store latest packet atomically; no queue, no buffering.
     newInput_ = input;
     hasNewInput_.store(true, std::memory_order_release);

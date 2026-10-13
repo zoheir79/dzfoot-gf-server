@@ -468,6 +468,16 @@ void Team::Process() {
                    designatedTeamPossessionPlayer != GetGoalie()) {
           target = designatedTeamPossessionPlayer;
           targetSource = "designated_possession";
+        } else if (!match->IsInSetPiece() &&
+                   !(retainer && retainer->GetTeamID() == GetID()) &&
+                   currentSelected &&
+                   designatedTeamPossessionPlayer != currentSelected &&
+                   designatedTeamPossessionPlayer != GetGoalie() &&
+                   designatedTeamPossessionPlayer->GetTimeNeededToGetToBall_ms() + 400 < currentSelected->GetTimeNeededToGetToBall_ms()) {
+          // Opponent has the ball (or it is loose): hand control to our player
+          // nearest the ball, with hysteresis to avoid flip-flopping.
+          target = designatedTeamPossessionPlayer;
+          targetSource = "nearest_to_ball";
         }
         if (target) {
           // DZFoot: one human gamer per team; always switch the human gamer to the
