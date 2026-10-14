@@ -200,6 +200,10 @@ private:
     uint8_t bodyTypes_[DZ_MAX_PLAYERS] = {};
     uint8_t beardStyles_[DZ_MAX_PLAYERS] = {};
     uint8_t eyeColors_[DZ_MAX_PLAYERS] = {};
+    std::string customTeamName_[2];
+    uint8_t customTeamColor1_[2][3] = {};
+    uint8_t customTeamColor2_[2][3] = {};
+    bool hasCustomTeamColor_[2] = {false, false};
 };
 
 } // namespace GameServer

@@ -50,6 +50,11 @@ bool MatchConfig::loadString(const std::string& jsonStr, MatchConfig& out) {
 
         auto parseTeam = [&](const json& teamJ, TeamConfig& tc) {
             tc.name = teamJ.value("name", "default");
+            tc.short_name = teamJ.value("short_name", "");
+            tc.color_primary = teamJ.value("color_primary", "");
+            tc.color_secondary = teamJ.value("color_secondary", "");
+            tc.color_rgb1 = teamJ.value("color_rgb1", "");
+            tc.color_rgb2 = teamJ.value("color_rgb2", "");
             if (teamJ.contains("formation")) {
                 for (const auto& p : teamJ["formation"]) {
                     TeamFormationEntry e;

@@ -409,8 +409,10 @@ void Humanoid::Process() {
     }
 
     if (currentAnim->anim->GetVariable("incoming_retain_state") != "") {
+      match->GetBall()->SetPosition(spatialState.position + spatialState.directionVec * 0.25f + Vector3(0, 0, 1.80f));
       fullBallDistance = 0.0f;
       touchableDistance = 1.0f;
+      desiredBallHeight = match->GetBall()->Predict(0).coords[2];
     }
 
     float bumpyRideBias = fullBallDistance / touchableDistance;
@@ -649,6 +651,9 @@ void Humanoid::Process() {
     if ((currentAnim->touchFrame <= currentAnim->frameNum && currentAnim->anim->GetVariable("outgoing_retain_state") != "") ||
         (currentAnim->touchFrame >  currentAnim->frameNum && currentAnim->anim->GetVariable("incoming_retain_state") != "") ||
         (currentAnim->anim->GetVariable("incoming_retain_state") != "" && currentAnim->anim->GetVariable("outgoing_retain_state") != "")) {
+      // Headless fix: Put() does not run in headless server mode, so update nodeMap spatial data here
+      currentAnim->anim->Apply(nodeMap, currentAnim->frameNum, 0, false, 0.0f, spatialState.position, spatialState.angle, offsets, 0, 0, false, false);
+      humanoidNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
       // find body part the ball is stuck to (superglue powers)
       NodeMap::iterator iter = nodeMap.find(currentAnim->anim->GetVariable("outgoing_retain_state"));
       if (iter == nodeMap.end()) iter = nodeMap.find(currentAnim->anim->GetVariable("incoming_retain_state"));
@@ -656,7 +661,11 @@ void Humanoid::Process() {
       boost::intrusive_ptr<Node> bodyPart = iter->second;
       match->GetBall()->Touch(Vector3(0));
       match->GetBall()->SetRotation(0, 0, 0, 1.0);
-      match->GetBall()->SetPosition(bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.36f));
+      Vector3 retainPos = bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.36f);
+      if ((retainPos.Get2D() - spatialState.position.Get2D()).GetLength() > 2.0f || retainPos.coords[2] < 0.5f) {
+        retainPos = spatialState.position + spatialState.directionVec * 0.20f + Vector3(0, 0, 1.85f);
+      }
+      match->GetBall()->SetPosition(retainPos);
       team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Intentional_Nonkicked);
     } else {
       // no longer retaining

@@ -34,6 +34,11 @@ struct TeamFormationEntry {
 
 struct TeamConfig {
     std::string name;
+    std::string short_name;
+    std::string color_primary;
+    std::string color_secondary;
+    std::string color_rgb1;
+    std::string color_rgb2;
     std::vector<TeamFormationEntry> formation;  // 11 entries expected
     std::vector<PlayerSkillProfile> players;    // 11 entries, same order as formation
 };
