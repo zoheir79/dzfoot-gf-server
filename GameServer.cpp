@@ -118,8 +118,8 @@ void Server::sendMatchSetup() {
     setup.header.type = dzfoot::PACKET_MATCH_SETUP;
     setup.header.size = sizeof(MatchSetupPacket);
     setup.header.flags = 0;
-    copyString(setup.teamAName, sizeof(setup.teamAName), f
-    copyString(setup.teamBName, sizeof(setup.teamBName), f
+    copyString(setup.teamAName, sizeof(setup.teamAName), customTeamName_[0].empty() ? cfg_.teamA : customTeamName_[0]);
+    copyString(setup.teamBName, sizeof(setup.teamBName), customTeamName_[1].empty() ? cfg_.teamB : customTeamName_[1]);
     setup.durationMinutes = static_cast<uint8_t>(cfg_.duration / 60);
     setup.playerCount = 22; // 11 per team
 #if 0  // Disabled to reduce noise
@@ -143,20 +143,47 @@ void Server::sendMatchSetup() {
 
     // Team colors
     for (int t = 0; t < 2; ++t) {
-        TeTm* aa=match->GT(t)
-        iftn!t)conin
-        = teDaTa*mddnti;ea->GetDaa()
-        ifV(!to)tdontin-o
-    VectVec3or3 c = tGd->Gotr2();()
-    autoVecdor3 cs= (=d->G tsetup.()lor1 : setup.teamBColor1;
-     autauto*o* d2 = (t==  0) ?(set p.= ? AsetupCt:10e]cp.c<uiBnt8_t1ast1[2] = static_cast<uint8_t>(clamp(c1.coords[2] * 255.0f, 0.0f, 255.0f));
-        tuto[0ds]2sta_t ==t0  ? sscup.it8_A2 : situp.  amB+t) {
+        auto* dst1 = (t == 0) ? setup.teamAColor1 : setup.teamBColor1;
+        auto* dst2 = (t == 0) ? setup.teamAColor2 : setup.teamBColor2;
+        if (hasCustomTeamColor_[t]) {
+            for (int k = 0; k < 3; ++k) {
+                dst1[k] = customTeamColor1_[t][k];
+                dst2[k] = customTeamColor2_[t][k];
+            }
+            continue;
+        }
+        Team* team = match->GetTeam(t);
+        if (!team) continue;
+        TeamData* td = team->GetTeamData();
+        if (!td) continue;
+        Vector3 c1 = td->GetColor1();
+        Vector3 c2 = td->GetColor2();
+        dst1[0] = static_cast<uint8_t>(clamp(c1.coords[0] * 255.0f, 0.0f, 255.0f));
+        dst1[1] = static_cast<uint8_t>(clamp(c1.coords[1] * 255.0f, 0.0f, 255.0f));
+        dst1[2] = static_cast<uint8_t>(clamp(c1.coords[2] * 255.0f, 0.0f, 255.0f));
+        dst2[0] = static_cast<uint8_t>(clamp(c2.coords[0] * 255.0f, 0.0f, 255.0f));
+        dst2[1] = static_cast<uint8_t>(clamp(c2.coords[1] * 255.0f, 0.0f, 255.0f));
+        dst2[2] = static_cast<uint8_t>(clamp(c2.coords[2] * 255.0f, 0.0f, 255.0f));
+    }
+
+    for (int t = 0; t < 2; ++t) {
         Team* team = match->GetTeam(t);
         if (!team) continue;
         const std::vector<Player*>& players = team->GetAllPlayers();
         for (size_t i = 0; i < players.size() && i < 11; ++i) {
             Player* p = players[i];
-            if (!p) continue; e   ps.eyeColor = eyeColors_[idx];
+            if (!p) continue;
+            int idx = static_cast<int>(i + t * 11);
+            if (idx >= kMaxPlayers) break;
+
+            PlayerStaticInfo& ps = setup.players[idx];
+            ps.index = static_cast<uint8_t>(idx);
+            ps.team = static_cast<uint8_t>(t);
+            ps.role = static_cast<uint8_t>(p->GetFormationEntry().role);
+            ps.playerNumber = (playerNumbers_[idx] != 0) ? playerNumbers_[idx] : static_cast<uint8_t>(i + 1); // config or fallback
+            ps.bodyType = bodyTypes_[idx];
+            ps.beardStyle = beardStyles_[idx];
+            ps.eyeColor = eyeColors_[idx];
 
             const PlayerData* pd = p->GetPlayerData();
             if (pd) {
@@ -460,11 +487,7 @@ void Server::run() {
                           << " active=" << (sp ? sp->IsActive() : false)
                           << std::endl;
             }
-    int simTicksPerSec = 85;
-    if (    } char* hzEnv =std::getenv("GF_SIM_HZ")) {
-        t v = std::aoi(hzEnv);
-        if (v >= 50 && v <= 120)v
-    }
+        }
         std::cout << "[gamestates] GF_STARTED" << std::endl;
     }
 #endif
