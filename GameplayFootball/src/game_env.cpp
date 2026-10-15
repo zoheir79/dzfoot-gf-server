@@ -257,7 +257,7 @@ void GameEnv::assignPieceTakerToHuman(int team) {
   if (!match) return;
   if (!match->IsInSetPiece()) return;
   Team* t = match->GetTeam(team);
-  if (!t) return;
+  if (!t || t->GetHumanGamerCount() == 0) return;
   Player* pieceTaker = t->GetController()->GetPieceTaker();
   bool wasHuman = pieceTaker && t->IsHumanControlled(pieceTaker->GetID());
   if (pieceTaker && !wasHuman) {

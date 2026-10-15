@@ -259,13 +259,16 @@ void Server::run() {
 
     gameEnv_ = new GameEnv();
 
-    // Configure GF match parameters BEFORE start_game().
-    // With the fixed start_game() (uses this->scenario_config), we must
-    // pre-fill formations so GF can initialise controllers correctly.
+    if (const char* hzEnv = std::getenv("GF_SIM_HZ")) {
+        int v = std::atoi(hzEnv);
+        if (v >= 50 && v <= 120) simTicksPerSec_ = v;
+    }
+
+    // Configure scenario BEFORE start_game
     auto& sc = gameEnv_->scenario_config;
     sc.left_agents = (cfg_.gameMode == 2) ? 0 : 1;  // 0 for ai_vs_ai, 1 otherwise
     sc.right_agents = (cfg_.gameMode == 0) ? 1 : 0; // 1 for 1v1, 0 for vs_ai/ai_vs_ai
-    sc.game_duration = cfg_.duration * dzfoot::kSimFrequencyHz;  // GF steps (100 steps/sec)
+    sc.game_duration = cfg_.duration * simTicksPerSec_;
 
     // Load custom configuration if provided (via JSON string or path)
     MatchConfig mcfg;
@@ -285,7 +288,7 @@ void Server::run() {
     }
 
     if (hasCustomConfig) {
-        sc.game_duration = mcfg.duration_seconds * dzfoot::kSimFrequencyHz;
+        sc.game_duration = mcfg.duration_seconds * simTicksPerSec_;
         stadiumId_ = mcfg.stadium_id;
         if (!mcfg.left_team.formation.empty()) {
             sc.left_team = buildFormation(mcfg.left_team);
@@ -299,7 +302,7 @@ void Server::run() {
     bool leftControllable = (cfg_.gameMode != 2);
     bool rightControllable = (cfg_.gameMode == 0);
     if (sc.left_team.empty()) appendDefault433(sc.left_team, leftControllable, false);
-    if (sc.right_team.empty()) appendDefault433(sc.right_team, rightControllable, true);
+    if (sc.right_team.empty()) appendDefault433(sc.right_team, rightControllable, false);
 
     gameEnv_->start_game();
 
@@ -505,14 +508,12 @@ void Server::run() {
     // stats (possession, distance) are sampled at 60 Hz, not 100 Hz.
     // This is accurate enough for gameplay stats; do NOT move it into the
     // 100 Hz loop without also updating currentState_ there.
-    const int simTicksPerSec = 100;
-    const int stateUpdateHz = 60;
+    int simTicksPerSec = simTicksPerSec_;
     const auto framePeriod = std::chrono::microseconds(1'000'000 / simTicksPerSec);
     int broadcastHz = std::min(cfg_.broadcastRateHz, simTicksPerSec);
     if (broadcastHz < 1) broadcastHz = 1;
     const int broadcastSkip = std::max(1, simTicksPerSec / broadcastHz);
-    const int tacticalSkip = std::max(1, simTicksPerSec / 10);
-    int stateTickAccumulator = 0;
+    const int tacticalSkip = std::max(1, simTicksPerSec / 5);
 
     // === Start gate ===
     // The Android client needs minutes to load/compile its scene. Without a
@@ -530,7 +531,7 @@ void Server::run() {
         int v = std::atoi(maxEnv);
         if (v > 0) gateMaxSec = v;
     }
-    const int gateWarmupTicks = 100;  // let the match initialise before freezing
+    const int gateWarmupTicks = 205;  // advance past Referee startTime=2000ms so kickoff whistle is already blown when client appears
     bool gateOpen = !gateEnabled;
     const auto gateStart = std::chrono::steady_clock::now();
     int gateLogTicks = 0;
@@ -581,27 +582,24 @@ void Server::run() {
             break;
         }
 
-        // 2. State update at 60 Hz (accumulator: 60/100 ratio)
-        stateTickAccumulator += stateUpdateHz;
-        if (stateTickAccumulator >= simTicksPerSec) {
-            stateTickAccumulator -= simTicksPerSec;
-            try {
-                updateState();
-            } catch (const std::exception& e) {
-                std::cerr << "[gamestates] GF_CRASH: Exception in updateState(): " << e.what() << std::endl;
-                if (cfg_.redis && cfg_.redis->isConfigured()) {
-                    cfg_.redis->publish("gf.crashed", cfg_.roomId);
-                }
-                running_ = false;
-                break;
-            } catch (...) {
-                std::cerr << "[gamestates] GF_CRASH: Unknown exception in updateState()" << std::endl;
-                if (cfg_.redis && cfg_.redis->isConfigured()) {
-                    cfg_.redis->publish("gf.crashed", cfg_.roomId);
-                }
-                running_ = false;
-                break;
+        // 2. State update every simulation tick so broadcastGameState() always
+        // sends a freshly sampled state at exact 4-tick (50.0 ms = 20 Hz) intervals.
+        try {
+            updateState();
+        } catch (const std::exception& e) {
+            std::cerr << "[gamestates] GF_CRASH: Exception in updateState(): " << e.what() << std::endl;
+            if (cfg_.redis && cfg_.redis->isConfigured()) {
+                cfg_.redis->publish("gf.crashed", cfg_.roomId);
             }
+            running_ = false;
+            break;
+        } catch (...) {
+            std::cerr << "[gamestates] GF_CRASH: Unknown exception in updateState()" << std::endl;
+            if (cfg_.redis && cfg_.redis->isConfigured()) {
+                cfg_.redis->publish("gf.crashed", cfg_.roomId);
+            }
+            running_ = false;
+            break;
         }
 
         // 3. Broadcast at 20 Hz (or cfg_.broadcastRateHz)
@@ -648,10 +646,9 @@ void Server::run() {
 
 void Server::updateState() {
     currentState_.tick = tickCounter_;
-    // 100 env-steps/s -> each tick = 10 ms wall time
-    const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(dzfoot::kSimFrequencyHz);
+    const uint64_t usPerTick = 1'000'000ULL / static_cast<uint64_t>(simTicksPerSec_);
     currentState_.timestampUs = baseTimestampUs_ + static_cast<uint64_t>(tickCounter_) * usPerTick;
-    currentState_.timer = tickCounter_ * (1.0f / static_cast<float>(dzfoot::kSimFrequencyHz));
+    currentState_.timer = tickCounter_ * (1.0f / static_cast<float>(simTicksPerSec_));
 
     if (gameEnv_) {
         auto info = gameEnv_->get_info();
@@ -661,16 +658,11 @@ void Server::updateState() {
         // won't count up while players are frozen in a set piece.
         currentState_.timer = static_cast<float>(info.match_time_ms) / 1000.0f;
 
-        // Play clock: wall-clock seconds since the ball first entered play.
-        // match_time_ms runs faster than real time (matchDurationFactor), so
-        // it can't gate match duration — a "300s" match would die ~75s after
-        // kickoff. Also, pre-kickoff waiting (client scene loading, set piece
-        // setup) must not eat into the match budget.
         if (matchStartTick_ < 0 && info.match_time_ms > 0) {
             matchStartTick_ = static_cast<int64_t>(tickCounter_);
         }
         const float playElapsedS = (matchStartTick_ >= 0)
-            ? static_cast<float>(tickCounter_ - matchStartTick_) / static_cast<float>(dzfoot::kSimFrequencyHz)
+            ? static_cast<float>(tickCounter_ - matchStartTick_) / static_cast<float>(simTicksPerSec_)
             : 0.0f;
 
         // --- Ball state ---
@@ -689,11 +681,12 @@ void Server::updateState() {
             if (ball) {
                 Vector3 mov = ball->GetMovement();
                 Vector3 rot = ball->GetRotation();
-                // Velocity: internal units per physics tick -> env coords per SECOND
-                // Client DeadReckoning expects m/s (or env-units/s), not per-tick.
-                currentState_.ball.vel[0] = (mov.coords[0] / X_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
-                currentState_.ball.vel[1] = (mov.coords[1] / Y_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
-                currentState_.ball.vel[2] = (mov.coords[2] / Z_FIELD_SCALE) * dzfoot::kSimFrequencyHz;
+                // ball->GetMovement() in ball.cpp is ALREADY in meters/second (for 100Hz step).
+                // Scale by (simTicksPerSec_ / 100.0f) and divide by field scale to get env-units/s.
+                const float paceScale = static_cast<float>(simTicksPerSec_) / 100.0f;
+                currentState_.ball.vel[0] = (mov.coords[0] / X_FIELD_SCALE) * paceScale;
+                currentState_.ball.vel[1] = (mov.coords[1] / Y_FIELD_SCALE) * paceScale;
+                currentState_.ball.vel[2] = (mov.coords[2] / Z_FIELD_SCALE) * paceScale;
                 currentState_.ball.rot[0] = rot.coords[0];
                 currentState_.ball.rot[1] = rot.coords[1];
                 currentState_.ball.rot[2] = rot.coords[2];
@@ -757,6 +750,9 @@ void Server::updateState() {
                 if (info.ball_owned_team == teamId && info.ball_owned_player == p->GetID()) {
                     ps.flags |= 8; // has_possession
                 }
+                if (m->GetBallRetainer() == p) {
+                    ps.flags |= 0x18; // 0x08 (has_possession) | 0x10 (holding ball in hands: throw-in or GK catch/retain)
+                }
 
                 Vector3 d = p->GetDirectionVec();
                 ps.dir[0] = d.coords[0];
@@ -764,9 +760,12 @@ void Server::updateState() {
                 ps.dir[2] = d.coords[2];
                 if (std::abs(ps.dir[0]) < 0.001f && std::abs(ps.dir[1]) < 0.001f) {
                     Vector3 mov = p->GetMovement();
-                    ps.dir[0] = mov.coords[0] / X_FIELD_SCALE;
-                    ps.dir[1] = mov.coords[1] / Y_FIELD_SCALE;
-                    ps.dir[2] = mov.coords[2] / Z_FIELD_SCALE;
+                    float mlen = std::sqrt(mov.coords[0] * mov.coords[0] + mov.coords[1] * mov.coords[1]);
+                    if (mlen > 0.001f) {
+                        ps.dir[0] = mov.coords[0] / mlen;
+                        ps.dir[1] = mov.coords[1] / mlen;
+                        ps.dir[2] = 0.0f;
+                    }
                 }
                 ps.rotY = getHeadingFromDir(ps.dir[0], ps.dir[1]);
 
@@ -801,12 +800,6 @@ void Server::updateState() {
                     if (clipId < 0 || clipId >= 0xFF00) clipId = 0;
                     ps.anim = static_cast<uint8_t>(clipId & 0xFF);
                     ps.enumVelocity = static_cast<uint8_t>((clipId >> 8) & 0xFF);
-                }
-                // Override with celebration if goal was just scored by this player
-                int globalIdx = baseIdx + static_cast<int>(i);
-                if (globalIdx < kMaxPlayers && tickCounter_ < celebrationExpiryTick_[globalIdx]) {
-                    ps.anim = ANIM_CELEBRATE;
-                    ps.enumVelocity = 0xFF; // legacy category fallback marker
                 }
             }
         };
@@ -864,8 +857,20 @@ void Server::updateState() {
                         Vector3 d = off->GetDirectionVec();
                         os.dir[0] = d.coords[0];
                         os.dir[1] = d.coords[1];
-                        os.dir[2] = d.coords[2];
                         os.rotY = getHeadingFromDir(os.dir[0], os.dir[1]);
+                        // Pack exact AnimCollection clipId (u16 @20) + animProgress (u16 @22) into os.dir[2] (4 bytes)
+                        int offClipId = off->GetAnimCollectionId();
+                        if (offClipId < 0 || offClipId >= 0xFF00) offClipId = 0;
+                        int offFrameNum = off->GetFrameNum();
+                        int offFrameCount = off->GetFrameCount();
+                        float offProgF = (offFrameCount > 0) ? static_cast<float>(offFrameNum) / static_cast<float>(offFrameCount) : 0.0f;
+                        if (offProgF < 0.0f) offProgF = 0.0f;
+                        if (offProgF > 1.0f) offProgF = 1.0f;
+                        uint16_t packedClip = static_cast<uint16_t>(offClipId);
+                        uint16_t packedProg = static_cast<uint16_t>(offProgF * 65535.0f);
+                        uint32_t packedDir2 = static_cast<uint32_t>(packedClip) | (static_cast<uint32_t>(packedProg) << 16);
+                        std::memcpy(&os.dir[2], &packedDir2, sizeof(float));
+
                         float vel = off->GetFloatVelocity();
                         if (vel < 0.5f) os.anim = dzfoot::ANIM_IDLE;
                         else if (vel < 3.0f) os.anim = dzfoot::ANIM_WALK;
@@ -873,7 +878,20 @@ void Server::updateState() {
                         else os.anim = dzfoot::ANIM_SPRINT;
                         os.team = 2; // officials team ID
                         os.role = offs[o].role;
-                        os.flags = 1; // active
+                        uint8_t oflags = 1; // active
+                        if (off->GetCurrentFunctionType() == e_FunctionType_Special) {
+                            oflags |= 0x10; // special animation (e.g. showing card)
+                            if (o == 0 && match->GetReferee()) {
+                                int ft = match->GetReferee()->GetCurrentFoulType();
+                                if (ft == 2) oflags |= 0x02;      // yellow card in hand
+                                else if (ft == 3) oflags |= 0x04; // red card in hand
+                            }
+                            if (off->GetCurrentAnim() && off->GetCurrentAnim()->anim &&
+                                off->GetCurrentAnim()->anim->GetName().find("mirror") != std::string::npos) {
+                                oflags |= 0x08; // left hand (mirrored clip)
+                            }
+                        }
+                        os.flags = oflags;
                     } else {
                         std::memset(&os, 0, sizeof(os));
                     }
@@ -881,80 +899,92 @@ void Server::updateState() {
             }
         }
 
-        // --- Detect card transitions (yellow = has_card flag turned on, red = is_active flag turned off) ---
-        for (int idx = 0; idx < kMaxPlayers; ++idx) {
-            uint8_t prevF = previousState_.players[idx].flags;
-            uint8_t curF  = currentState_.players[idx].flags;
-            bool prevActive = (prevF & 1) != 0;
-            bool curActive  = (curF  & 1) != 0;
-            bool prevCard   = (prevF & 2) != 0;
-            bool curCard    = (curF  & 2) != 0;
-            uint8_t team = currentState_.players[idx].team;
-
-            if (!prevCard && curCard) {
-                MatchEvent ev{};
-                ev.eventType = EVENT_YELLOW_CARD;
-                ev.team = team;
-                ev.playerIdx = static_cast<uint8_t>(idx);
-                ev.pos[0] = currentState_.players[idx].pos[0];
-                ev.pos[1] = currentState_.players[idx].pos[1];
-                ev.pos[2] = currentState_.players[idx].pos[2];
-                ev.tick = tickCounter_;
-                ev.score[0] = static_cast<uint8_t>(info.left_goals);
-                ev.score[1] = static_cast<uint8_t>(info.right_goals);
-                eventQueue_.push_back(ev);
-                stats_.yellow_cards[team]++;
-            }
-            // Red card = player was active and now inactive (and not at init)
-            if (prevActive && !curActive && previousState_.tick > 0) {
-                MatchEvent ev{};
-                ev.eventType = EVENT_RED_CARD;
-                ev.team = team;
-                ev.playerIdx = static_cast<uint8_t>(idx);
-                ev.pos[0] = currentState_.players[idx].pos[0];
-                ev.pos[1] = currentState_.players[idx].pos[1];
-                ev.pos[2] = currentState_.players[idx].pos[2];
-                ev.tick = tickCounter_;
-                ev.score[0] = static_cast<uint8_t>(info.left_goals);
-                ev.score[1] = static_cast<uint8_t>(info.right_goals);
-                eventQueue_.push_back(ev);
-                stats_.red_cards[team]++;
+        // --- Detect card transitions accurately from Player::GetCards() (1=1Y, 2=2Y->R, 3+=direct R) ---
+        if (match) {
+            for (int t = 0; t < 2; ++t) {
+                Team* teamObj = match->GetTeam(t);
+                if (!teamObj) continue;
+                std::vector<Player*> teamPlayers;
+                teamObj->GetAllPlayers(teamPlayers);
+                int count = std::min(static_cast<int>(teamPlayers.size()), 11);
+                for (int i = 0; i < count; ++i) {
+                    Player* p = teamPlayers[i];
+                    if (!p) continue;
+                    int idx = t * 11 + i;
+                    uint8_t curCards = static_cast<uint8_t>(std::max(0, p->GetCards()));
+                    uint8_t prevCards = prevCards_[idx];
+                    if (curCards > prevCards && previousState_.tick > 0) {
+                        uint8_t diff = curCards - prevCards;
+                        if (diff == 1) {
+                            // Yellow card (1st yellow or 2nd yellow)
+                            MatchEvent ev{};
+                            ev.eventType = EVENT_YELLOW_CARD;
+                            ev.team = static_cast<uint8_t>(t);
+                            ev.playerIdx = static_cast<uint8_t>(idx);
+                            ev.pos[0] = currentState_.players[idx].pos[0];
+                            ev.pos[1] = currentState_.players[idx].pos[1];
+                            ev.pos[2] = currentState_.players[idx].pos[2];
+                            ev.tick = tickCounter_;
+                            ev.score[0] = static_cast<uint8_t>(info.left_goals);
+                            ev.score[1] = static_cast<uint8_t>(info.right_goals);
+                            eventQueue_.push_back(ev);
+                            stats_.yellow_cards[t]++;
+                            if (curCards >= 2) {
+                                // Second yellow -> also emit red card
+                                MatchEvent evR = ev;
+                                evR.eventType = EVENT_RED_CARD;
+                                eventQueue_.push_back(evR);
+                                stats_.red_cards[t]++;
+                            }
+                        } else if (diff >= 2) {
+                            // Direct red card (GiveRedCard adds 3)
+                            MatchEvent ev{};
+                            ev.eventType = EVENT_RED_CARD;
+                            ev.team = static_cast<uint8_t>(t);
+                            ev.playerIdx = static_cast<uint8_t>(idx);
+                            ev.pos[0] = currentState_.players[idx].pos[0];
+                            ev.pos[1] = currentState_.players[idx].pos[1];
+                            ev.pos[2] = currentState_.players[idx].pos[2];
+                            ev.tick = tickCounter_;
+                            ev.score[0] = static_cast<uint8_t>(info.left_goals);
+                            ev.score[1] = static_cast<uint8_t>(info.right_goals);
+                            eventQueue_.push_back(ev);
+                            stats_.red_cards[t]++;
+                        }
+                    }
+                    prevCards_[idx] = curCards;
+                }
             }
         }
 
-        // --- Detect referee events (foul, offside) ---
+        // --- Detect referee events (foul when play actually stops, offside) ---
         if (match) {
             Referee* referee = match->GetReferee();
             if (referee) {
-                // Foul detection: transition from no foul to foul
                 int foulType = referee->GetCurrentFoulType();
                 Player* foulPlayer = referee->GetCurrentFoulPlayer();
-                int foulPlayerIdx = -1;
-                int foulTeam = -1;
-                if (foulPlayer) {
-                    // Find player index in current state
-                    for (int i = 0; i < kMaxPlayers; ++i) {
-                        if (currentState_.players[i].flags == 0) continue;
-                        // Heuristic: match by position proximity (engine may not expose player ID directly)
-                        // Fallback: use last touch team/player when referee signals foul
-                        foulTeam = currentState_.ball.ownedTeam;
-                        if (foulTeam >= 0 && foulTeam <= 1) {
-                            int base = foulTeam * 11;
-                            for (int j = 0; j < 11; ++j) {
-                                if (currentState_.players[base + j].flags & 1) {
-                                    foulPlayerIdx = j;
-                                    break;
-                                }
-                            }
+                int foulPlayerIdx = 0;
+                int foulTeam = 0;
+                if (foulPlayer && foulPlayer->GetTeam()) {
+                    foulTeam = foulPlayer->GetTeam()->GetID();
+                    std::vector<Player*> fpList;
+                    foulPlayer->GetTeam()->GetAllPlayers(fpList);
+                    for (size_t j = 0; j < fpList.size() && j < 11; ++j) {
+                        if (fpList[j] == foulPlayer) {
+                            foulPlayerIdx = foulTeam * 11 + static_cast<int>(j);
+                            break;
                         }
-                        break;
                     }
                 }
-                if (foulType > 0 && lastRefereeFoulType_ == 0) {
+                bool isFoulStopped = (foulType > 0) && !info.is_in_play &&
+                                     referee->GetBuffer().active &&
+                                     (referee->GetBuffer().desiredSetPiece == e_SetPiece_FreeKick ||
+                                      referee->GetBuffer().desiredSetPiece == e_SetPiece_Penalty);
+                if (isFoulStopped && !wasFoulStopped_) {
                     MatchEvent ev{};
                     ev.eventType = EVENT_FOUL;
-                    ev.team = (foulTeam >= 0) ? static_cast<uint8_t>(foulTeam) : 0;
-                    ev.playerIdx = (foulPlayerIdx >= 0) ? static_cast<uint8_t>(foulPlayerIdx) : 0;
+                    ev.team = static_cast<uint8_t>(foulTeam);
+                    ev.playerIdx = static_cast<uint8_t>(foulPlayerIdx);
                     ev.pos[0] = currentState_.ball.pos[0];
                     ev.pos[1] = currentState_.ball.pos[1];
                     ev.pos[2] = currentState_.ball.pos[2];
@@ -963,10 +993,13 @@ void Server::updateState() {
                     ev.score[1] = static_cast<uint8_t>(info.right_goals);
                     eventQueue_.push_back(ev);
                 }
+                wasFoulStopped_ = isFoulStopped;
                 lastRefereeFoulType_ = foulType;
 
-                // Offside detection: transition from no offside to offside
-                bool isOffside = referee->HasOffsidePlayers();
+                // Offside detection: only fire when referee actually stops play for an offside free kick
+                bool isOffside = referee->HasOffsidePlayers() && !info.is_in_play &&
+                                 referee->GetBuffer().active &&
+                                 referee->GetBuffer().desiredSetPiece == e_SetPiece_FreeKick;
                 if (isOffside && !wasOffside_ && (tickCounter_ - lastOffsideTick_ > 100)) {
                     Player* offPlayer = referee->GetFirstOffsidePlayer();
                     if (offPlayer) {
@@ -1029,11 +1062,12 @@ void Server::updateState() {
             }
         };
         if (info.left_goals > lastScoreA_) {
-            resolveShotsOnGoal(0, info.ball_owned_player);
+            int scorerIdx = (info.ball_owned_player >= 0 && info.ball_owned_player < 11) ? info.ball_owned_player : 9;
+            resolveShotsOnGoal(0, scorerIdx);
             MatchEvent ev;
             ev.eventType = EVENT_GOAL;
             ev.team = 0;
-            ev.playerIdx = static_cast<uint8_t>(info.ball_owned_player);
+            ev.playerIdx = static_cast<uint8_t>(scorerIdx);
             ev.pos[0] = currentState_.ball.pos[0];
             ev.pos[1] = currentState_.ball.pos[1];
             ev.pos[2] = currentState_.ball.pos[2];
@@ -1043,18 +1077,15 @@ void Server::updateState() {
             eventQueue_.push_back(ev);
             stats_.goals[0]++;
             lastScoreA_ = info.left_goals;
-            // Force celebration on scorer (~3 seconds at 100Hz)
-            int scorerIdx = info.ball_owned_player;
-            if (scorerIdx >= 0 && scorerIdx < 11) {
-                celebrationExpiryTick_[scorerIdx] = tickCounter_ + 300; // 3 sec
-            }
+            celebrationExpiryTick_[scorerIdx] = tickCounter_ + 580;
         }
         if (info.right_goals > lastScoreB_) {
-            resolveShotsOnGoal(1, info.ball_owned_player);
+            int scorerIdx = (info.ball_owned_player >= 0 && info.ball_owned_player < 11) ? info.ball_owned_player : 9;
+            resolveShotsOnGoal(1, scorerIdx);
             MatchEvent ev;
             ev.eventType = EVENT_GOAL;
             ev.team = 1;
-            ev.playerIdx = static_cast<uint8_t>(info.ball_owned_player);
+            ev.playerIdx = static_cast<uint8_t>(11 + scorerIdx);
             ev.pos[0] = currentState_.ball.pos[0];
             ev.pos[1] = currentState_.ball.pos[1];
             ev.pos[2] = currentState_.ball.pos[2];
@@ -1064,11 +1095,7 @@ void Server::updateState() {
             eventQueue_.push_back(ev);
             stats_.goals[1]++;
             lastScoreB_ = info.right_goals;
-            // Force celebration on scorer (~3 seconds at 100Hz)
-            int scorerIdx = info.ball_owned_player;
-            if (scorerIdx >= 0 && scorerIdx < 11) {
-                celebrationExpiryTick_[11 + scorerIdx] = tickCounter_ + 300; // 3 sec
-            }
+            celebrationExpiryTick_[11 + scorerIdx] = tickCounter_ + 580;
         }
 
         // Game mode transitions -> events
@@ -1333,8 +1360,14 @@ void Server::updateTacticalState() {
             tacticalState_.offsideTrapX[t] = controller->GetOffsideTrapX() / X_FIELD_SCALE;
             if (controller->GetSetPieceType() != e_SetPiece_None) {
                 tacticalState_.setPieceType = static_cast<uint8_t>(controller->GetSetPieceType());
-                tacticalState_.setPieceTaker = static_cast<uint8_t>(findPlayerIndex(team, controller->GetPieceTaker()));
-                if (tacticalState_.setPieceTaker != 255) tacticalState_.setPieceTeam = static_cast<uint8_t>(t);
+                Player* pieceTaker = controller->GetPieceTaker();
+                if (pieceTaker) {
+                    int localIdx = findPlayerIndex(team, pieceTaker);
+                    if (localIdx >= 0) {
+                        tacticalState_.setPieceTaker = static_cast<uint8_t>(t * 11 + localIdx);
+                        tacticalState_.setPieceTeam = static_cast<uint8_t>(t);
+                    }
+                }
             }
         }
 
@@ -1455,10 +1488,13 @@ void Server::receiveInput(const PlayerInputPacket& input) {
         }
     }
     clientReady_.store(true, std::memory_order_release);
-    // Store latest packet atomically; no queue, no buffering.
-    newInput_ = input;
-    hasNewInput_.store(true, std::memory_order_release);
+    // Store latest packet per team under lock so Team A (0) and Team B (1) never race or overwrite each other.
     if (input.team <= 1) {
+        {
+            std::lock_guard<std::mutex> lk(inputMutex_);
+            newInput_[input.team] = input;
+            hasNewInput_[input.team].store(true, std::memory_order_release);
+        }
         accumulatedButtons_[input.team].fetch_or(input.buttons, std::memory_order_relaxed);
     }
 }
@@ -1466,7 +1502,7 @@ void Server::receiveInput(const PlayerInputPacket& input) {
 void Server::applyPendingInputs() {
     if (!gameEnv_) return;
 
-    // Consume the single latest input packet directly (no queue, no buffering).
+    // Consume the latest input packet per team directly (no queue, no buffering).
     // Also grab any buttons that arrived in rapid-fire packets between ticks.
     PlayerInputPacket newest[2] = {};
     bool hasNewest[2] = {};
@@ -1475,17 +1511,24 @@ void Server::applyPendingInputs() {
         accumulatedButtons_[1].exchange(0, std::memory_order_relaxed)
     };
 
-    if (hasNewInput_.exchange(false, std::memory_order_acquire)) {
-        int t = newInput_.team;
-        if (t <= 1) {
-            if (std::isfinite(newInput_.dirX) && std::isfinite(newInput_.dirZ)) {
-                newest[t] = newInput_;
-                hasNewest[t] = true;
+    {
+        std::lock_guard<std::mutex> lk(inputMutex_);
+        for (int t = 0; t < 2; ++t) {
+            if (hasNewInput_[t].exchange(false, std::memory_order_acquire)) {
+                if (std::isfinite(newInput_[t].dirX) && std::isfinite(newInput_[t].dirZ)) {
+                    newest[t] = newInput_[t];
+                    hasNewest[t] = true;
+                }
             }
         }
     }
 
     for (int t = 0; t < 2; ++t) {
+        // Only apply human HID inputs to teams that actually have a human agent:
+        // gameMode: 0 = 1v1 (both human), 1 = vs_ai (only team 0 human), 2 = ai_vs_ai (no human)
+        const bool isHumanTeam = (t == 0) ? (cfg_.gameMode != 2) : (cfg_.gameMode == 0);
+        if (!isHumanTeam) continue;
+
         // Force-assign the piece taker to the human gamer. Team::Process()
         // reassigns the human to designatedTeamPossessionPlayer (players.at(0))
         // which is NOT the taker. Without this, the human would control the

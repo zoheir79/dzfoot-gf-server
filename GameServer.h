@@ -6,6 +6,7 @@
 #include <chrono>
 #include <array>
 #include <memory>
+#include <mutex>
 #include "MatchSetup.h"
 #include "protocol/DZFootProtocol.h"
 
@@ -137,16 +138,18 @@ private:
     GameState previousState_; // for velocity diff
     TacticalStatePacket tacticalState_ = {};
     uint32_t tickCounter_ = 0;
+    int simTicksPerSec_ = 80;
     std::vector<MatchEvent> eventQueue_;
     std::chrono::steady_clock::time_point startTime_;
     uint64_t baseTimestampUs_ = 0;
 
     GameEnv* gameEnv_ = nullptr;
 
-    // Latest input received from network (atomic flag, single latest packet).
-    // No queue: we always consume the most recent input directly.
-    std::atomic<bool> hasNewInput_{false};
-    PlayerInputPacket newInput_{};
+    // Latest input received from network per team (0=Team A, 1=Team B).
+    // Protected by inputMutex_ to avoid torn reads on 36-byte struct.
+    std::mutex inputMutex_;
+    std::atomic<bool> hasNewInput_[2] = {};
+    PlayerInputPacket newInput_[2] = {};
 
     // Start gate: set by the first input packet from the client. The Android
     // client only sends input once its scene is fully loaded AND displayed, so
@@ -186,6 +189,8 @@ private:
     // Referee event tracking
     int     lastRefereeFoulType_ = 0;   // 0=none, 1=foul, 2=yellow, 3=red
     int     lastRefereeFoulPlayer_ = -1;
+    bool    wasFoulStopped_ = false;
+    uint8_t prevCards_[kMaxPlayers] = {};
     bool    wasOffside_ = false;
     int     lastOffsideTick_ = 0;
 

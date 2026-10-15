@@ -77,7 +77,7 @@ IController *PlayerBase::GetController() {
 }
 
 void PlayerBase::RequestCommand(PlayerCommandQueue &commandQueue) {
-  if (externalController) externalController->RequestCommand(commandQueue);
+  if (externalController && !(!match->IsInPlay() && match->IsGoalScored())) externalController->RequestCommand(commandQueue);
                      else controller->RequestCommand(commandQueue);
 }
 

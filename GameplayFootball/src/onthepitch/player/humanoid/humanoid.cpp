@@ -651,8 +651,8 @@ void Humanoid::Process() {
     if ((currentAnim->touchFrame <= currentAnim->frameNum && currentAnim->anim->GetVariable("outgoing_retain_state") != "") ||
         (currentAnim->touchFrame >  currentAnim->frameNum && currentAnim->anim->GetVariable("incoming_retain_state") != "") ||
         (currentAnim->anim->GetVariable("incoming_retain_state") != "" && currentAnim->anim->GetVariable("outgoing_retain_state") != "")) {
-      // Headless fix: Put() does not run in headless server mode, so update nodeMap spatial data here
-      currentAnim->anim->Apply(nodeMap, currentAnim->frameNum, 0, false, 0.0f, spatialState.position, spatialState.angle, offsets, 0, 0, false, false);
+      // Headless fix: Put() does not run in headless server mode, so update nodeMap spatial data here with noPos=true (since spatialState.position already includes horizontal anim displacement)
+      currentAnim->anim->Apply(nodeMap, currentAnim->frameNum, 0, false, 0.0f, spatialState.position, spatialState.angle, offsets, 0, 0, true, false);
       humanoidNode->RecursiveUpdateSpatialData(e_SpatialDataType_Both);
       // find body part the ball is stuck to (superglue powers)
       NodeMap::iterator iter = nodeMap.find(currentAnim->anim->GetVariable("outgoing_retain_state"));
@@ -661,9 +661,21 @@ void Humanoid::Process() {
       boost::intrusive_ptr<Node> bodyPart = iter->second;
       match->GetBall()->Touch(Vector3(0));
       match->GetBall()->SetRotation(0, 0, 0, 1.0);
-      Vector3 retainPos = bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.36f);
-      if ((retainPos.Get2D() - spatialState.position.Get2D()).GetLength() > 2.0f || retainPos.coords[2] < 0.5f) {
-        retainPos = spatialState.position + spatialState.directionVec * 0.20f + Vector3(0, 0, 1.85f);
+      Vector3 retainPos = bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.34f);
+      // When both hands hold the ball (throw-in or 2-handed goalkeeper catch), center the ball between left and right hands
+      NodeMap::iterator iterL = nodeMap.find("left_elbow");
+      NodeMap::iterator iterR = nodeMap.find("right_elbow");
+      if (iterL != nodeMap.end() && iterR != nodeMap.end()) {
+        Vector3 handL = iterL->second->GetDerivedPosition() + iterL->second->GetDerivedRotation() * Vector3(0, 0, -0.34f);
+        Vector3 handR = iterR->second->GetDerivedPosition() + iterR->second->GetDerivedRotation() * Vector3(0, 0, -0.34f);
+        if ((handL - handR).GetLength() < 0.65f || match->IsInSetPiece()) {
+          retainPos = (handL + handR) * 0.5f;
+        }
+      }
+      retainPos.coords[2] = clamp(retainPos.coords[2], 0.11f, 2.35f);
+      if ((retainPos.Get2D() - spatialState.position.Get2D()).GetLength() > 1.8f) {
+        float fallbackZ = (CastPlayer()->GetFormationEntry().role == e_PlayerRole_GK) ? 1.05f : 1.78f;
+        retainPos = spatialState.position + spatialState.directionVec * 0.24f + Vector3(0, 0, fallbackZ);
       }
       match->GetBall()->SetPosition(retainPos);
       team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Intentional_Nonkicked);
@@ -1310,6 +1322,11 @@ bool Humanoid::SelectAnim(const PlayerCommand &command, e_InterruptAnim localInt
     }
   } else {
     query.incomingBodyDirection_Strict = true;
+  }
+
+  if (query.functionType == e_FunctionType_Special && command.useSpecialVar1) {
+    query.byIncomingVelocity = false;
+    query.byIncomingBodyDirection = false;
   }
 
   query.bySide = false;

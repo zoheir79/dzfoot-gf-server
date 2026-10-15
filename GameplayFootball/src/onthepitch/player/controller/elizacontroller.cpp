@@ -1111,10 +1111,10 @@ void ElizaController::_AddCelebration(std::vector<PlayerCommand> &commandQueue) 
     } else {
       madeGoal = 1;
       if (team->GetLastTouchPlayer() != 0) {
-        if ((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() < 20) {
+        if ((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() < 35) {
           celebrationPosition = team->GetLastTouchPlayer()->GetPosition();
           desiredDirection = ((team->GetLastTouchPlayer()->GetPosition() * 0.5 + celebrationPosition * 0.5) - player->GetPosition()).GetNormalized();
-          desiredVelocityFloat = ClampVelocity((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() / 2.0);
+          desiredVelocityFloat = ClampVelocity((team->GetLastTouchPlayer()->GetPosition() - player->GetPosition()).GetLength() / 1.6);
         } else {
           desiredVelocityFloat = idleVelocity;
         }
@@ -1126,7 +1126,7 @@ void ElizaController::_AddCelebration(std::vector<PlayerCommand> &commandQueue) 
 
   // celebration
 
-  if (match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime > 2000 && match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime < 4000) {
+  if (match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime > 900 && match->GetActualTime_ms() - match->GetReferee()->GetBuffer().stopTime < 5800) {
     PlayerCommand command;
     command.desiredFunctionType = e_FunctionType_Special;
     command.useSpecialVar1 = true;

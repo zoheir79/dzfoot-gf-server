@@ -380,10 +380,11 @@ void HumanController::Process() {
       // in situations where we aren't the designated player, we sometimes still want to do ball stuff, because we could try to extend our leg to pass, for example
       if (hid->GetButton(e_ButtonFunction_ShortPass)) possessionContext += 0.15f; // todo: bug: the logic of these weighings are based on the default 'pes' button settings.. need to take into account the defensive function of the buttons as well
       if (hid->GetButton(e_ButtonFunction_LongPass)) possessionContext += 0.15f;
+      if (hid->GetButton(e_ButtonFunction_HighPass)) possessionContext += 0.35f;
       if (hid->GetButton(e_ButtonFunction_Shot)) possessionContext += 0.15f;
 
       if (hid->GetButton(e_ButtonFunction_Pressure)) possessionContext -= 0.15f;
-      if (hid->GetButton(e_ButtonFunction_Sliding)) possessionContext -= 0.15f;
+      if (hid->GetButton(e_ButtonFunction_Sliding)) possessionContext -= 0.45f;
       if (hid->GetButton(e_ButtonFunction_TeamPressure)) possessionContext -= 0.15f;
 
       if (match->GetBall()->Predict(0).coords[2] > 1.5f) possessionContext += 0.2f;
